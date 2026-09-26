@@ -1,0 +1,9 @@
+[project]
+name = "astra-cu"
+version = "0.1.0"
+description = "Astra-style computer use MCP server for Windows (a11y tree first, code mode, auto-validate)"
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.2", "uiautomation>=2.0.29", "mss", "Pillow"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
