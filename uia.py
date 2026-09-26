@@ -615,10 +615,10 @@ class Desk:
     def app(self, cmd, title=None, timeout=15.0):
         """Launch a program / path / URI (e.g. shell:AppsFolder\\<AUMID>) and target its window."""
         before = set(self._wins())
-        if os.path.exists(cmd) or re.match(r"^[a-z][a-z0-9+.-]*:(?![\\/])", cmd, re.I):
-            os.startfile(cmd)
+        if re.match(r"^[a-z][a-z0-9+.-]*:(?![\\/])", cmd, re.I):
+            os.startfile(cmd)  # URI / shell: activation runs outside our process tree
         else:
-            self._spawn(cmd)
+            self._spawn(f'"{cmd}"' if os.path.exists(cmd) else cmd)
         end = time.time() + timeout
         while time.time() < end:
             self.stop()
@@ -639,10 +639,25 @@ class Desk:
 
     @staticmethod
     def _spawn(cmd):
-        # never inherit our stdio: under MCP stdio it would corrupt/hold the protocol pipe
-        subprocess.Popen(cmd, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, close_fds=True,
-                         creationflags=subprocess.DETACHED_PROCESS)
+        """Launch outside our process tree: MCP clients put the server in a kill-on-close job, so
+        a plain child app would die (unsaved work included) when the session ends. Never inherit
+        our stdio either: under MCP stdio it would corrupt/hold the protocol pipe."""
+        try:  # WMI (WmiPrvSE) creates it in this session, outside any job we are in (nested
+            # jobs make CREATE_BREAKAWAY_FROM_JOB silently keep the child in the inner job)
+            import win32com.client
+            wmi = win32com.client.GetObject("winmgmts:")
+            inp = wmi.Get("Win32_Process").Methods_("Create").InParameters.SpawnInstance_()
+            inp.CommandLine = cmd
+            if wmi.ExecMethod("Win32_Process", "Create", inp).ReturnValue == 0:
+                return
+        except Exception:
+            pass
+        io = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        try:  # shell syntax WMI can't run: best effort breakaway
+            subprocess.Popen(cmd, shell=True, **io, creationflags=subprocess.DETACHED_PROCESS
+                             | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+        except OSError:
+            subprocess.Popen(cmd, shell=True, **io, creationflags=subprocess.DETACHED_PROCESS)
 
     def sh(self, cmd, timeout=30):
         if not self.confirmed:
