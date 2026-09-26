@@ -3,8 +3,8 @@
 observe: accessibility tree first (+ screenshot when the window is canvas-like), shots with
 grid / Set-of-Marks, OCR, burst montages.  run: Python in a persistent REPL (code mode) with
 UIA, game-grade input, vision and memory helpers; returns output + images + a UI diff.
-Safety: Ctrl+Alt+Q kill switch and user-input interrupt (low-level hooks), takeover overlay,
-held-input release, Guardian-lite confirmations, window denylist.
+Safety: Ctrl+LeftAlt+Q kill switch and user-input interrupt (low-level hooks, only while a run acts),
+takeover overlay, held-input release, Guardian-lite confirmations, window denylist.
 """
 import ast, ctypes, ctypes.wintypes as wt, io, os, threading, traceback
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
@@ -116,18 +116,49 @@ def _mouse_proc(code, wparam, lparam):
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _k32.GetModuleHandleW.argtypes, _k32.GetModuleHandleW.restype = (wt.LPCWSTR,), wt.HMODULE
+_u32.UnhookWindowsHookEx.argtypes = (wt.HHOOK,)
+_u32.PostThreadMessageW.argtypes = (wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM)
 
 
-def _hook_loop():
-    hmod = _k32.GetModuleHandleW(None)  # typed: a truncated 64-bit handle fails with error 126
-    hooks = [_u32.SetWindowsHookExW(13, _kbd_proc, hmod, 0), _u32.SetWindowsHookExW(14, _mouse_proc, hmod, 0)]
-    state["hooks"] = all(hooks)
-    if not state["hooks"]:
-        state["hook_error"] = ctypes.get_last_error()
-        return
-    msg = wt.MSG()
-    while _u32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-        pass
+class Hooks:
+    """Global low-level hooks exist ONLY while a run acts: never a system-wide keyboard hook
+    idling in every Claude Code session (input latency; looks like a keylogger to anti-cheats)."""
+
+    def __init__(self):
+        self.thread, self.tid, self.ready = None, None, threading.Event()
+
+    def start(self):
+        self.ready.clear()
+        self.thread = threading.Thread(target=self._loop, daemon=True, name="astra-hooks")
+        self.thread.start()
+        self.ready.wait(1)
+
+    def stop(self):
+        if self.thread and self.tid:
+            _u32.PostThreadMessageW(self.tid, 0x0012, 0, 0)  # WM_QUIT ends the message loop
+            self.thread.join(1)
+        self.thread = self.tid = None
+
+    def _loop(self):
+        msg = wt.MSG()
+        _u32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)  # create the queue before tid is published
+        self.tid = _k32.GetCurrentThreadId()
+        hmod = _k32.GetModuleHandleW(None)  # typed: a truncated 64-bit handle fails with error 126
+        hooks = [_u32.SetWindowsHookExW(13, _kbd_proc, hmod, 0), _u32.SetWindowsHookExW(14, _mouse_proc, hmod, 0)]
+        state["hooks"] = all(hooks)
+        if not state["hooks"]:
+            state["hook_error"] = ctypes.get_last_error()
+        self.ready.set()
+        try:
+            while _u32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                pass
+        finally:
+            for h in hooks:
+                if h:
+                    _u32.UnhookWindowsHookEx(h)
+
+
+HOOKS = Hooks()
 
 
 # ---------- REPL ----------
@@ -220,6 +251,7 @@ def _exec(code, confirm):
     if ov:
         ov.show()
     err = ""
+    HOOKS.start()
     try:
         state["acting"] = True
         tree = ast.parse(code)
@@ -235,6 +267,7 @@ def _exec(code, confirm):
         err = "ERROR: " + "".join(tb[-2:]).strip()
     finally:
         state["acting"] = False
+        HOOKS.stop()
         d.confirmed = False
         if ov:
             ov.hide()
@@ -347,7 +380,6 @@ def run(code: str, timeout: int = 30, confirm: bool = False):
 
 
 if __name__ == "__main__":
-    threading.Thread(target=_hook_loop, daemon=True, name="astra-hooks").start()
     if os.environ.get("ASTRA_OVERLAY", "1") != "0":
         from overlay import Overlay
         ov = Overlay()

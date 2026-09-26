@@ -80,6 +80,8 @@ validate protocol, the game guidance and the safety rules. Set `ASTRA_OVERLAY=0`
 
 - **Ctrl + Left Alt + Q** aborts the running action. AltGr+Q still types `@`.
 - Physical keyboard or mouse input during a run aborts it (`UserInterrupt`). The tool never fights the user for control.
+- The low-level keyboard/mouse hooks behind both features exist only while a `run` is acting. Nothing hooks
+  system input while the server idles in a Claude Code session.
 - Keys are only sent to a verified foreground target. All held keys and buttons are released on any abort.
 - `sh()` and clicks on elements named like Send, Buy, Pay, Delete, Install or Allow require `run(..., confirm=True)`.
 - Denylisted windows (password managers, banking) are refused.
