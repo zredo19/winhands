@@ -75,9 +75,9 @@ _u32.CallNextHookEx.restype = ctypes.c_ssize_t
 _mods = {"ctrl": False, "alt": False}
 
 
-def _user_input():
+def _user_input(reason):
     if state["acting"] and not state["user"]:
-        state["user"] = True
+        state["user"], state["user_reason"] = True, reason
         _interrupt(UserInterrupt)
 
 
@@ -96,7 +96,7 @@ def _kbd_proc(code, wparam, lparam):
                 _interrupt(Killed)
             return 1                                       # swallow Q only while we act
         elif down and k.vk not in (0x10, 0xA0, 0xA1, 0x5B, 0x5C, 0xA5):  # modifiers alone don't count
-            _user_input()
+            _user_input(f"physical key vk=0x{k.vk:02X}")
     return _u32.CallNextHookEx(None, code, wparam, lparam)
 
 
@@ -108,9 +108,9 @@ def _mouse_proc(code, wparam, lparam):
             if state["mouse0"] is None:
                 state["mouse0"] = (m.pt.x, m.pt.y)
             elif abs(m.pt.x - state["mouse0"][0]) + abs(m.pt.y - state["mouse0"][1]) > 25:
-                _user_input()
+                _user_input(f"physical mouse move to {m.pt.x},{m.pt.y} from {state['mouse0']}")
         elif wparam in (0x201, 0x204, 0x207, 0x20A, 0x20E):  # buttons down / wheels
-            _user_input()
+            _user_input(f"physical mouse message 0x{wparam:X}")
     return _u32.CallNextHookEx(None, code, wparam, lparam)
 
 
@@ -265,6 +265,8 @@ def _exec(code, confirm):
         inputs.release_all()
         tb = traceback.format_exception(type(e), e, e.__traceback__)
         err = "ERROR: " + "".join(tb[-2:]).strip()
+        if isinstance(e, UserInterrupt) or state["user"]:
+            err += f"\nUserInterrupt cause: {state.get('user_reason')} (observe again before acting)"
     finally:
         state["acting"] = False
         HOOKS.stop()
