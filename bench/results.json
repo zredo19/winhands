@@ -1,0 +1,512 @@
+{
+ "schema_chars": {
+  "astra-cu": 1294,
+  "windows-mcp": 16741
+ },
+ "rows": [
+  {
+   "server": "astra-cu",
+   "task": "calc",
+   "rep": 0,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 2,
+   "ms": 5150,
+   "tokens": 379,
+   "log": [
+    [
+     "run",
+     4073,
+     337
+    ],
+    [
+     "run",
+     1077,
+     41
+    ]
+   ]
+  },
+  {
+   "server": "astra-cu",
+   "task": "notepad",
+   "rep": 0,
+   "ok": true,
+   "check": null,
+   "calls": 3,
+   "ms": 7946,
+   "tokens": 1860,
+   "log": [
+    [
+     "run",
+     3038,
+     157
+    ],
+    [
+     "run",
+     2810,
+     838
+    ],
+    [
+     "run",
+     2099,
+     865
+    ]
+   ]
+  },
+  {
+   "server": "astra-cu",
+   "task": "calc",
+   "rep": 1,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 2,
+   "ms": 4847,
+   "tokens": 394,
+   "log": [
+    [
+     "run",
+     3778,
+     352
+    ],
+    [
+     "run",
+     1068,
+     43
+    ]
+   ]
+  },
+  {
+   "server": "astra-cu",
+   "task": "notepad",
+   "rep": 1,
+   "ok": true,
+   "check": null,
+   "calls": 3,
+   "ms": 7691,
+   "tokens": 1874,
+   "log": [
+    [
+     "run",
+     3037,
+     163
+    ],
+    [
+     "run",
+     2557,
+     849
+    ],
+    [
+     "run",
+     2097,
+     862
+    ]
+   ]
+  },
+  {
+   "server": "astra-cu",
+   "task": "calc",
+   "rep": 2,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 2,
+   "ms": 4855,
+   "tokens": 394,
+   "log": [
+    [
+     "run",
+     3774,
+     352
+    ],
+    [
+     "run",
+     1081,
+     43
+    ]
+   ]
+  },
+  {
+   "server": "astra-cu",
+   "task": "notepad",
+   "rep": 2,
+   "ok": true,
+   "check": null,
+   "calls": 3,
+   "ms": 8147,
+   "tokens": 1863,
+   "log": [
+    [
+     "run",
+     3149,
+     163
+    ],
+    [
+     "run",
+     2892,
+     849
+    ],
+    [
+     "run",
+     2106,
+     851
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "calc",
+   "rep": 0,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 12,
+   "ms": 29428,
+   "tokens": 5949,
+   "log": [
+    [
+     "App",
+     8579,
+     6
+    ],
+    [
+     "App",
+     5283,
+     9
+    ],
+    [
+     "Snapshot",
+     5389,
+     2243
+    ],
+    [
+     "Click",
+     559,
+     9
+    ],
+    [
+     "Click",
+     563,
+     9
+    ],
+    [
+     "Click",
+     555,
+     10
+    ],
+    [
+     "Click",
+     559,
+     10
+    ],
+    [
+     "Click",
+     562,
+     9
+    ],
+    [
+     "Click",
+     555,
+     9
+    ],
+    [
+     "Click",
+     555,
+     10
+    ],
+    [
+     "Click",
+     554,
+     10
+    ],
+    [
+     "Snapshot",
+     5714,
+     3615
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "notepad",
+   "rep": 0,
+   "ok": true,
+   "check": null,
+   "calls": 7,
+   "ms": 19157,
+   "tokens": 8689,
+   "log": [
+    [
+     "App",
+     2955,
+     7
+    ],
+    [
+     "Snapshot",
+     5303,
+     1800
+    ],
+    [
+     "Type",
+     1361,
+     11
+    ],
+    [
+     "Shortcut",
+     594,
+     6
+    ],
+    [
+     "Snapshot",
+     6224,
+     6834
+    ],
+    [
+     "Type",
+     1493,
+     22
+    ],
+    [
+     "PowerShell",
+     1229,
+     9
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "calc",
+   "rep": 1,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 12,
+   "ms": 24188,
+   "tokens": 5948,
+   "log": [
+    [
+     "App",
+     8668,
+     6
+    ],
+    [
+     "App",
+     2,
+     10
+    ],
+    [
+     "Snapshot",
+     5290,
+     2242
+    ],
+    [
+     "Click",
+     557,
+     9
+    ],
+    [
+     "Click",
+     554,
+     9
+    ],
+    [
+     "Click",
+     555,
+     10
+    ],
+    [
+     "Click",
+     558,
+     10
+    ],
+    [
+     "Click",
+     558,
+     9
+    ],
+    [
+     "Click",
+     556,
+     9
+    ],
+    [
+     "Click",
+     555,
+     10
+    ],
+    [
+     "Click",
+     561,
+     10
+    ],
+    [
+     "Snapshot",
+     5773,
+     3614
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "notepad",
+   "rep": 1,
+   "ok": true,
+   "check": null,
+   "calls": 7,
+   "ms": 20116,
+   "tokens": 6034,
+   "log": [
+    [
+     "App",
+     3036,
+     7
+    ],
+    [
+     "Snapshot",
+     5298,
+     1800
+    ],
+    [
+     "Type",
+     1351,
+     11
+    ],
+    [
+     "Shortcut",
+     567,
+     6
+    ],
+    [
+     "Snapshot",
+     6654,
+     4179
+    ],
+    [
+     "Type",
+     1489,
+     22
+    ],
+    [
+     "PowerShell",
+     1720,
+     9
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "calc",
+   "rep": 2,
+   "ok": true,
+   "check": "Se muestra 56.088",
+   "calls": 12,
+   "ms": 23899,
+   "tokens": 5948,
+   "log": [
+    [
+     "App",
+     8533,
+     6
+    ],
+    [
+     "App",
+     3,
+     10
+    ],
+    [
+     "Snapshot",
+     5295,
+     2242
+    ],
+    [
+     "Click",
+     561,
+     9
+    ],
+    [
+     "Click",
+     555,
+     9
+    ],
+    [
+     "Click",
+     554,
+     10
+    ],
+    [
+     "Click",
+     559,
+     10
+    ],
+    [
+     "Click",
+     556,
+     9
+    ],
+    [
+     "Click",
+     555,
+     9
+    ],
+    [
+     "Click",
+     554,
+     10
+    ],
+    [
+     "Click",
+     554,
+     10
+    ],
+    [
+     "Snapshot",
+     5619,
+     3614
+    ]
+   ]
+  },
+  {
+   "server": "windows-mcp",
+   "task": "notepad",
+   "rep": 2,
+   "ok": true,
+   "check": null,
+   "calls": 7,
+   "ms": 19335,
+   "tokens": 8482,
+   "log": [
+    [
+     "App",
+     2889,
+     7
+    ],
+    [
+     "Snapshot",
+     5315,
+     1800
+    ],
+    [
+     "Type",
+     1346,
+     11
+    ],
+    [
+     "Shortcut",
+     583,
+     6
+    ],
+    [
+     "Snapshot",
+     6092,
+     6627
+    ],
+    [
+     "Type",
+     1534,
+     22
+    ],
+    [
+     "PowerShell",
+     1578,
+     9
+    ]
+   ]
+  }
+ ]
+}
