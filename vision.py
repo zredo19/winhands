@@ -4,11 +4,29 @@ Capture, shots (grid / Set-of-Marks / region zoom) with image->screen transforms
 montages, Windows OCR, template and color search, change/stability waits.
 All coordinates in and out are physical screen px unless a function says otherwise.
 """
-import io, math, os, threading, time
+import ctypes, io, math, os, threading, time
+from ctypes import wintypes as W
 from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+# private DLL instances with explicit 64-bit-safe signatures (other libs redefine windll's)
+_u32, _gdi = ctypes.WinDLL("user32"), ctypes.WinDLL("gdi32")
+try:
+    _u32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))  # physical px, same as UIA/mss
+except Exception:
+    pass
+for _f, _a, _r in ((_u32.GetWindowRect, (W.HWND, ctypes.POINTER(W.RECT)), W.BOOL),
+                   (_u32.GetWindowDC, (W.HWND,), W.HDC), (_u32.ReleaseDC, (W.HWND, W.HDC), ctypes.c_int),
+                   (_u32.PrintWindow, (W.HWND, W.HDC, W.UINT), W.BOOL),
+                   (_gdi.CreateCompatibleDC, (W.HDC,), W.HDC),
+                   (_gdi.CreateCompatibleBitmap, (W.HDC, ctypes.c_int, ctypes.c_int), W.HBITMAP),
+                   (_gdi.SelectObject, (W.HDC, W.HGDIOBJ), W.HGDIOBJ),
+                   (_gdi.GetDIBits, (W.HDC, W.HBITMAP, W.UINT, W.UINT, ctypes.c_void_p, ctypes.c_void_p,
+                                     W.UINT), ctypes.c_int),
+                   (_gdi.DeleteObject, (W.HGDIOBJ,), W.BOOL), (_gdi.DeleteDC, (W.HDC,), W.BOOL)):
+    _f.argtypes, _f.restype = _a, _r
 
 FONTS = "C:/Windows/Fonts/"
 HOME = os.path.join(os.path.expanduser("~"), ".astra-cu")
@@ -209,6 +227,48 @@ def grab(region=None):
     return np.asarray(grab_img(region))
 
 
+def grab_window(hwnd):
+    """(PIL image, window rect) via PrintWindow(PW_RENDERFULLCONTENT): works while the window is
+    covered and never changes focus. Black result (exclusive fullscreen, some GL/DX games) ->
+    falls back to the on-screen pixels of the rect."""
+    u, g = _u32, _gdi
+    r = W.RECT()
+    u.GetWindowRect(hwnd, ctypes.byref(r))
+    rect = (r.left, r.top, r.right, r.bottom)
+    w, h = r.right - r.left, r.bottom - r.top
+    if w <= 0 or h <= 0:
+        raise ValueError(f"window {hwnd} has no area (minimized?)")
+    wdc = u.GetWindowDC(hwnd)
+    mdc = g.CreateCompatibleDC(wdc)
+    bmp = g.CreateCompatibleBitmap(wdc, w, h)
+    g.SelectObject(mdc, bmp)
+    try:
+        u.PrintWindow(hwnd, mdc, 2)  # PW_RENDERFULLCONTENT
+        bi = (ctypes.c_uint32 * 10)(40, w, (-h) & 0xFFFFFFFF, 1 | (32 << 16), 0, 0, 0, 0, 0, 0)
+        buf = ctypes.create_string_buffer(w * h * 4)
+        g.GetDIBits(mdc, bmp, 0, h, buf, bi, 0)
+        img = Image.frombuffer("RGB", (w, h), buf, "raw", "BGRX", 0, 1).copy()
+    finally:
+        g.DeleteObject(bmp)
+        g.DeleteDC(mdc)
+        u.ReleaseDC(hwnd, wdc)
+    if max(e[1] for e in img.getextrema()) < 8:
+        img = grab_img(rect)
+    return img, rect
+
+
+def capture(region=None, hwnd=None):
+    """-> (PIL image, screen box). hwnd: window pixels (covered-safe); region: screen box
+    (cropped from the window capture when both are given)."""
+    if hwnd:
+        img, wb = grab_window(hwnd)
+        if not region:
+            return img, wb
+        x0, y0, x1, y1 = map(round, region)
+        return img.crop((x0 - wb[0], y0 - wb[1], x1 - wb[0], y1 - wb[1])), (x0, y0, x1, y1)
+    return grab_img(region), (tuple(map(round, region)) if region else desktop())
+
+
 def pixel(x, y):
     return tuple(grab((x, y, x + 1, y + 1))[0, 0].tolist())
 
@@ -219,10 +279,9 @@ def _jpeg(img, quality=60):
     return buf.getvalue()
 
 
-def make_shot(region, max_edge=1280, with_grid=False, mark_items=None, quality=60):
-    """Capture region -> (Shot, jpeg). mark_items = [(label, screen box)] drawn as SoM."""
-    img = grab_img(region)
-    box = tuple(map(round, region)) if region else desktop()
+def make_shot(region, max_edge=1280, with_grid=False, mark_items=None, quality=60, hwnd=None):
+    """Capture region / window -> (Shot, jpeg). mark_items = [(label, screen box)] drawn as SoM."""
+    img, box = capture(region, hwnd)
     w2, h2, s = fit(img.width, img.height, max_edge)
     if s > 1:
         img = img.resize((w2, h2), Image.Resampling.LANCZOS)
@@ -240,18 +299,18 @@ def make_shot(region, max_edge=1280, with_grid=False, mark_items=None, quality=6
     return shot, _jpeg(img, quality)
 
 
-def burst(region=None, frames=4, interval=0.25, crop_motion=True):
+def burst(region=None, frames=4, interval=0.25, crop_motion=True, hwnd=None):
     """Capture frames over time -> (montage image, caption). Crops to the moving area when motion
     is confined (much cheaper than full frames)."""
     imgs, stamps, t0 = [], [], time.monotonic()
     for i in range(frames):
         if check:
             check()
-        imgs.append(grab_img(region))
+        img, box = capture(region, hwnd)
+        imgs.append(img)
         stamps.append(round((time.monotonic() - t0) * 1000))
         if i < frames - 1:
             time.sleep(interval)
-    box = tuple(map(round, region)) if region else desktop()
     note = f"burst {frames} frames every {interval}s of screen box {box}"
     if crop_motion and len(imgs) > 1:
         arrs = [np.asarray(im) for im in imgs]
@@ -307,24 +366,23 @@ def ocr_image(img, scale=2.0, lang=None):
                        for w in ln.words]) for ln in res.lines]
 
 
-def _ocr_raw(region=None, scale=None, lang=None):
-    img = grab_img(region)
+def _ocr_raw(region=None, scale=None, lang=None, hwnd=None):
+    img, box = capture(region, hwnd)
     if scale is None:
         scale = 2.0 if img.width * img.height <= 1_000_000 else 1.0
-    box = tuple(map(round, region)) if region else desktop()
     return ocr_image(img, scale, lang), box[:2]
 
 
-def ocr(region=None, scale=None, lang=None):
-    """Read text on screen -> [(line, (x0, y0, x1, y1) screen)]. Isolated single characters
-    (HUD digits) are not read: use locate() templates for those."""
-    lines, origin = _ocr_raw(region, scale, lang)
+def ocr(region=None, scale=None, lang=None, hwnd=None):
+    """Read text -> [(line, (x0, y0, x1, y1) screen)]. hwnd reads a (possibly covered) window.
+    Isolated single characters (HUD digits) are not read: use locate() templates for those."""
+    lines, origin = _ocr_raw(region, scale, lang, hwnd)
     return format_ocr(lines, origin)
 
 
-def find_text(text, region=None, scale=None):
+def find_text(text, region=None, scale=None, hwnd=None):
     """Screen centre of the best match for text (exact word first, then substring), or None."""
-    lines, (ox, oy) = _ocr_raw(region, scale)
+    lines, (ox, oy) = _ocr_raw(region, scale, None, hwnd)
     t = text.lower()
     words = [(w, b) for _, ws in lines for w, b in ws]
     hit = next((b for w, b in words if w.lower() == t), None)
