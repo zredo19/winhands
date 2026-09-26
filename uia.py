@@ -53,7 +53,7 @@ def _prune_list(children, win_area):
     out = []
     for c in children:
         for k in prune(c, win_area):
-            if out and _is_text_leaf(k) and _is_text_leaf(out[-1]) and len(out[-1]["name"]) < 120:
+            if out and _is_text_leaf(k) and _is_text_leaf(out[-1]) and len(out[-1]["name"]) < 180:
                 out[-1]["name"] += " · " + k["name"]      # merge adjacent text-only siblings
             else:
                 out.append(k)
@@ -111,7 +111,7 @@ def flatten(node):
 def node_line(i, n):
     s = f"{i} {n['role']}"
     if n["name"]:
-        s += f' "{_clip(n["name"])}"'
+        s += f' "{_clip(n["name"], 200 if n["role"] == "text" else MAX_NAME)}"'  # merged texts carry data
     if n["value"] and n["value"] != n["name"]:
         s += f' Value: "{_clip(n["value"])}"'
     if n.get("extra"):

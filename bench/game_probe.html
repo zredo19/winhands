@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>astra-cu game probe</title>
+<style>
+  body { margin: 0; font: 18px monospace; background: #fff; overflow: hidden; }
+  #hud { position: fixed; top: 0; left: 0; background: #eef; padding: 8px; z-index: 2; width: 420px; }
+  canvas { display: block; }
+</style>
+<div id="hud">
+  <div id="lock">LOCK: off</div>
+  <div id="mouse">DX: 0 DY: 0</div>
+  <div id="btn">BTN L:0 M:0 R:0 WHEEL:0</div>
+  <div id="keys">KEYS:</div>
+  <div id="score">AIM: idle</div>
+  <button id="start">Start aim test</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+// Game-input probe: physical key codes (scan codes), raw relative mouse under pointer lock
+// (same path games like Minecraft use), buttons, wheel, and a 10 s aim test for closed loops.
+const c = document.getElementById('c'), g = c.getContext('2d'), $ = id => document.getElementById(id);
+let dx = 0, dy = 0, btn = [0, 0, 0], wheel = 0, keys = {}, aim = null, target = null;
+const R = 28, HUD = { w: 440, h: 230 };
+
+function hud() {
+  $('mouse').textContent = `DX: ${dx} DY: ${dy}`;
+  $('btn').textContent = `BTN L:${btn[0]} M:${btn[1]} R:${btn[2]} WHEEL:${wheel}`;
+  $('keys').textContent = 'KEYS: ' + Object.entries(keys).map(([k, v]) => `${k}=${v}`).join(' ');
+}
+function place() {
+  const x = HUD.w + R + Math.random() * (c.width - HUD.w - 2 * R);
+  const y = R + Math.random() * (c.height - 2 * R);
+  target = { x, y };
+}
+function draw() {
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  if (aim && target) {
+    g.fillStyle = '#ff0000'; g.beginPath(); g.arc(target.x, target.y, R, 0, 7); g.fill();
+  }
+}
+function fit() { c.width = innerWidth; c.height = innerHeight; draw(); }
+addEventListener('resize', fit); fit();
+
+document.addEventListener('pointerlockchange', () => {
+  $('lock').textContent = 'LOCK: ' + (document.pointerLockElement ? 'on' : 'off');
+});
+c.addEventListener('mousedown', e => {
+  if (aim) {
+    const hit = Math.hypot(e.clientX - target.x, e.clientY - target.y) <= R;
+    hit ? (aim.hits++, place()) : aim.misses++;
+    draw(); return;
+  }
+  btn[e.button]++; hud();
+  if (!document.pointerLockElement) {
+    const p = c.requestPointerLock({ unadjustedMovement: true });  // raw input, no acceleration
+    if (p && p.catch) p.catch(() => c.requestPointerLock());
+  }
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement) { dx += e.movementX; dy += e.movementY; hud(); }
+});
+document.addEventListener('wheel', e => { wheel += Math.sign(e.deltaY); hud(); });
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  keys[e.code] = (keys[e.code] || 0) + 1; hud();
+});
+$('start').addEventListener('click', () => {
+  if (document.pointerLockElement) document.exitPointerLock();
+  aim = { t0: performance.now(), hits: 0, misses: 0 }; place(); draw();
+  const tick = () => {
+    const t = (performance.now() - aim.t0) / 1000;
+    if (t >= 10) {
+      $('score').textContent = `AIM: done HITS: ${aim.hits} MISSES: ${aim.misses}`;
+      aim = null; target = null; draw(); return;
+    }
+    $('score').textContent = `AIM: running ${t.toFixed(1)}s HITS: ${aim.hits} MISSES: ${aim.misses}`;
+    requestAnimationFrame(tick);
+  };
+  tick();
+});
+</script>

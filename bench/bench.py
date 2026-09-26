@@ -4,11 +4,11 @@ Each task is driven the way an optimal agent would use each server (fewest calls
 tool design allows). We measure tool calls, wall time, and the size of what each call
 returns to the model (the tokens an agent must read).
 
-Token estimate: text = chars / 3.5; images = w*h / 750 (Anthropic vision formula).
+Token estimate: text = chars / 3.5; images = ceil(w/28) * ceil(h/28) (Anthropic vision docs).
 
 Usage: python bench.py <path-to-windows-mcp.exe> [reps]
 """
-import asyncio, io, json, os, re, subprocess, sys, tempfile, time
+import asyncio, io, json, math, os, re, subprocess, sys, tempfile, time
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -26,7 +26,7 @@ def tokens(content):
             import base64
             from PIL import Image
             w, h = Image.open(io.BytesIO(base64.b64decode(c.data))).size
-            t += w * h / 750
+            t += math.ceil(w / 28) * math.ceil(h / 28)
     return t
 
 
@@ -98,8 +98,9 @@ async def a_notepad(call, path):
     await call("run", code='app("notepad.exe")')
     await call("run", code='type("benchmark astra-cu", id=find(role="Edit", raw=True)[0])\n'
                            'key("ctrl+shift+s")\nwait_for("Nombre:", role="Edit")')
-    out = await call("run", code=f'type(r"{path}", name="Nombre:", role="Edit", enter=True)\n'
-                                 f'import time; time.sleep(0.8)\nsh(r"Test-Path \'{path}\'")')
+    out = await call("run", confirm=True,  # sh() is Guardian-gated; this check is the benchmark's own
+                     code=f'type(r"{path}", name="Nombre:", role="Edit", enter=True)\n'
+                          f'import time; time.sleep(0.8)\nsh(r"Test-Path \'{path}\'")')
     return "True" in out
 
 
