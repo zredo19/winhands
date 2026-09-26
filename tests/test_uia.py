@@ -54,6 +54,13 @@ def test_prune_keeps_big_unnamed_canvas():
     assert out["children"][0].get("canvas") is True
 
 
+def test_prune_marks_big_named_childless_surface_as_canvas():
+    tree = n("window", "Paint", rect=(0, 0, 100, 100), children=[
+        n("pane", "Using the brush on the canvas", rect=(0, 20, 100, 95)), n("button", "Save")])
+    kids = prune(tree, win_area=100 * 100)[0]["children"]
+    assert kids[0].get("canvas") is True and not kids[1].get("canvas")
+
+
 def test_prune_merges_adjacent_text_leaves():
     tree = n("window", "W", children=[n("text", "Línea 1"), n("text", "UTF-8"), n("button", "B")])
     kids = prune(tree, win_area=1)[0]["children"]
@@ -79,9 +86,8 @@ def test_render_indents_states_value_and_summary():
     tree = n("window", "Save", children=[edit, n("check box", "Hidden", checked="off"), lst])
     reg.assign(1, flatten(tree))
     lines = render(tree, reg).splitlines()
-    i = reg.ids
-    assert lines[0] == f'{i[tree["rid"]]} window "Save"'
-    assert lines[1] == f'  {i[edit["rid"]]} edit "Nombre:" Value: "a.txt" (focused, settable)'
+    assert lines[0] == f'{reg.id_of(tree)} window "Save"'
+    assert lines[1] == f'  {reg.id_of(edit)} edit "Nombre:" Value: "a.txt" (focused, settable)'
     assert lines[2].endswith('check box "Hidden" (unchecked)')
     assert lines[4].endswith('list item "x" (selected)')
     assert lines[5] == "    (showing 1-1 of 7; use find())"
@@ -91,11 +97,23 @@ def test_registry_ids_stable_and_survive_runtime_id_churn():
     reg = Registry()
     a, b = n("menu item", "File", rid=(1,)), n("button", "OK", rid=(2,))
     reg.assign(10, [a, b])
-    ida, idb = reg.ids[(1,)], reg.ids[(2,)]
+    ida, idb = reg.id_of(a), reg.id_of(b)
     a2 = n("menu item", "File", rid=(99,))           # same element, fresh RuntimeId
     reg.assign(10, [a2, b])
-    assert reg.ids[(99,)] == ida and reg.ids[(2,)] == idb
+    assert reg.id_of(a2) == ida and reg.id_of(b) == idb
     assert reg.current[10] == {ida, idb}
+
+
+def test_registry_reused_runtime_id_for_other_element_gets_new_id():
+    # MSAA-proxied UIs (Win32 ribbons) reuse RuntimeIds for different elements after re-layout
+    reg = Registry()
+    undo, custom = n("button", "Undo", rid=(5,)), n("button", "Customize", rid=(7,))
+    reg.assign(1, [undo, custom])
+    iu, ic = reg.id_of(undo), reg.id_of(custom)
+    custom2, undo2 = n("button", "Customize", rid=(5,)), n("button", "Undo", rid=(8,))
+    reg.assign(1, [undo2, custom2])
+    assert reg.id_of(undo2) == iu and reg.id_of(custom2) == ic
+    assert len(reg.current[1]) == 2                  # never two nodes with one id
 
 
 def test_diff_added_removed_changed():
@@ -104,15 +122,16 @@ def test_diff_added_removed_changed():
                                      n("button", "B", rid=(3,))])
     reg.assign(5, flatten(old))
     before = reg.lines(flatten(old))
+    before_ids = {1: reg.id_of(old["children"][2])}
     new = n("window", "W", rid=old["rid"], children=[n("button", "A", rid=(1,)),
                                                      n("edit", "E", value="typed", rid=(2,)),
                                                      n("button", "C", rid=(4,))])
     reg.assign(5, flatten(new))
     out = diff(before, reg.lines(flatten(new))).splitlines()
-    ids = reg.ids
-    assert f'- {ids[(3,)]} button "B"' in out
-    assert f'~ {ids[(2,)]} edit "E" Value: "typed"' in out
-    assert f'+ {ids[(4,)]} button "C"' in out
+    b_old, e_new, c_new = old["children"][2], new["children"][1], new["children"][2]
+    assert f'- {before_ids[1]} button "B"' in out
+    assert f'~ {reg.id_of(e_new)} edit "E" Value: "typed"' in out
+    assert f'+ {reg.id_of(c_new)} button "C"' in out
     assert len(out) == 3
 
 

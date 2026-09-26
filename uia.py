@@ -72,15 +72,13 @@ def prune(node, win_area):
     has_kids = bool(node["children"])
     if not node["enabled"] and not node["name"] and not node["value"] and not has_kids:
         return []                                              # empty disabled
+    x0, y0, x1, y1 = node["rect"]
+    if node["role"] in CANVAS_ROLES and not has_kids and (x1 - x0) * (y1 - y0) >= 0.2 * win_area:
+        return [{**node, "canvas": True}]                      # big childless surface: canvas
     descriptive = node["name"] or node["value"] or node["role"] in INTERACTIVE or node["focused"]
     if descriptive:
         return [node]
-    if has_kids:
-        return node["children"]                                # unnamed container: flatten
-    x0, y0, x1, y1 = node["rect"]
-    if node["role"] in CANVAS_ROLES and (x1 - x0) * (y1 - y0) >= 0.2 * win_area:
-        return [{**node, "canvas": True}]                      # big unnamed surface: canvas
-    return []
+    return node["children"]                                    # unnamed container: flatten (or drop)
 
 
 def collapse_lists(node, max_items=25):
@@ -139,26 +137,36 @@ def node_line(i, n):
 
 
 class Registry:
-    """Small stable ids per UIA RuntimeId; tracks which ids the latest snapshot of each window holds."""
+    """Small ids that stay stable across snapshots; tracks the ids of each window's latest snapshot.
+    Identity = (RuntimeId, role, name): MSAA-proxied UIs (Win32 ribbons) reuse RuntimeIds for other
+    elements after re-layout, and some elements get a fresh RuntimeId each snapshot (paired back
+    to their old id by role+name)."""
     def __init__(self):
-        self.ids, self.rid_of, self.rec, self.current, self.snap = {}, {}, {}, {}, {}
+        self.ids, self.key_of, self.rec, self.current, self.snap = {}, {}, {}, {}, {}
         self._next = 1
+
+    @staticmethod
+    def _key(n):
+        return n["rid"], n["role"], n["name"]
+
+    def id_of(self, n):
+        return self.ids[self._key(n)]
 
     def assign(self, hwnd, flat):
         prev = self.snap.get(hwnd, {})
-        rids = {n["rid"] for n in flat}
+        keys = {self._key(n) for n in flat}
         gone = {}
         for i, sig in prev.items():
-            if self.rid_of.get(i) not in rids:
+            if self.key_of.get(i) not in keys:
                 gone.setdefault(sig, []).append(i)
         cur, snap = set(), {}
         for n in flat:
-            sig = (n["role"], n["name"])
-            i = self.ids.get(n["rid"])
-            if i is None:
+            k, sig = self._key(n), (n["role"], n["name"])
+            i = self.ids.get(k)
+            if i is None or i in cur:          # never two nodes with one id in a snapshot
                 i = gone[sig].pop(0) if gone.get(sig) else self._new()
-                self.ids[n["rid"]] = i          # RuntimeId churn keeps the old id
-            self.rid_of[i], self.rec[i] = n["rid"], {**n, "hwnd": hwnd}
+                self.ids[k] = i
+            self.key_of[i], self.rec[i] = k, {**n, "hwnd": hwnd}
             cur.add(i)
             snap[i] = sig
         self.current[hwnd], self.snap[hwnd] = cur, snap
@@ -168,11 +176,11 @@ class Registry:
         return self._next - 1
 
     def lines(self, flat):
-        return {self.ids[n["rid"]]: node_line(self.ids[n["rid"]], n) for n in flat}
+        return {self.id_of(n): node_line(self.id_of(n), n) for n in flat}
 
 
 def render(node, reg, depth=0):
-    lines = ["  " * depth + node_line(reg.ids[node["rid"]], node)]
+    lines = ["  " * depth + node_line(reg.id_of(node), node)]
     for c in node["children"]:
         lines.append(render(c, reg, depth + 1))
     if node.get("more"):
@@ -260,6 +268,7 @@ class Desk:
         self.auto, self.deny = auto, [d.lower() for d in deny]
         self.reg = Registry()
         self.last = {}          # hwnd -> {id: line} at last observe (diff baseline)
+        self.flat = {}          # hwnd -> nodes of the latest snapshot (find() cache)
         self.win = None         # current target window (uiautomation Control)
         self.before = set()     # top-level windows before the current action
         self.hidden = set()     # our own overlay windows
@@ -383,6 +392,7 @@ class Desk:
         trees = [self._tree(w)] + [self._tree(p) for p in self._popups(w)]
         flat = [n for t in trees for n in flatten(t)]
         self.reg.assign(w.NativeWindowHandle, flat)
+        self.flat[w.NativeWindowHandle] = flat
         return trees, flat
 
     def observe(self, target=None, mode="tree"):
@@ -401,7 +411,7 @@ class Desk:
         else:
             body = "\n".join(render(t, self.reg) if i == 0 else "popup:\n" + render(t, self.reg, 1)
                              for i, t in enumerate(trees))
-            focused = next((self.reg.ids[n["rid"]] for n in flat if n["focused"]), None)
+            focused = next((self.reg.id_of(n) for n in flat if n["focused"]), None)
             if focused:
                 body += f"\nfocused: {focused}"
         self.last[h] = lines
@@ -462,11 +472,17 @@ class Desk:
             hits.sort(key=lambda n: n["name"].lower() != t)  # exact names first
         return hits
 
-    def find(self, role=None, name=None, raw=False):
-        """Search the target window (+popups, + windows opened by this action)."""
+    def find(self, role=None, name=None, raw=False, fresh=False):
+        """Search the target window (+popups, + windows opened by this action). Uses the latest
+        snapshot first (hits are re-validated live before any action), then a fresh one."""
         w = self.resolve()
-        _, flat = self._snap(w)
-        hits = self._match(flat, role, name)
+        h = w.NativeWindowHandle
+        hits = []
+        if not fresh and h in self.flat:
+            hits = [n for n in self._match(self.flat[h], role, name) if self.reg.id_of(n) in self.reg.current[h]]
+        if not hits:
+            _, flat = self._snap(w)
+            hits = self._match(flat, role, name)
         if not hits:
             for h, x in self._wins().items():
                 if h not in self.before and h != w.NativeWindowHandle:
@@ -475,7 +491,7 @@ class Desk:
                     if hits:
                         self.win = x
                         break
-        ids = [self.reg.ids[n["rid"]] for n in hits]
+        ids = [self.reg.id_of(n) for n in hits]
         if raw:
             return ids
         return "\n".join(node_line(i, n) for i, n in zip(ids, hits)) or "(none)"
@@ -600,7 +616,7 @@ class Desk:
         end = time.time() + timeout
         while time.time() < end:
             self.stop()
-            ids = self.find(role=role, name=name, raw=True)
+            ids = self.find(role=role, name=name, raw=True, fresh=True)
             if ids:
                 return ids[0]
             time.sleep(0.2)
