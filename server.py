@@ -16,6 +16,7 @@ from mcp.server.mcpserver import Image, MCPServer
 import inputs, memory, vision
 from uia import INTERACTIVE, Desk
 
+LINGER = float(os.environ.get("WINHANDS_LINGER", "45"))  # s the border stays up between actions (thinking)
 SHARED = os.environ.get("WINHANDS_SHARED", "1") != "0"  # 0 = strict: any user input aborts a run
 DENY = ["bitwarden", "1password", "keepass", "lastpass", "banco", "bank"]
 mcp = MCPServer("winhands")
@@ -283,11 +284,7 @@ def _exec(code, confirm):
     vision.pending.clear()
     d.mark()
     ov = state["overlay"]
-    if ov:
-        try:
-            ov.show(d.win.NativeWindowHandle if d.win else 0)  # border on the target window's monitor
-        except Exception:
-            ov.show()
+    _overlay_on(d)
     err = ""
     HOOKS.start()
     try:
@@ -310,7 +307,7 @@ def _exec(code, confirm):
         HOOKS.stop()
         d.confirmed = False
         if ov:
-            ov.hide()
+            ov.hide(LINGER)
     text = out.getvalue()
     if len(text) > 3000:
         text = text[:3000] + f"\n... [{len(text) - 3000} chars cut]"
@@ -342,8 +339,19 @@ def _submit(fn, *a, timeout=60):
 
 # ---------- tools ----------
 
+def _overlay_on(d):
+    """Border on the target window's monitor (primary when there is no target)."""
+    ov = state["overlay"]
+    if ov:
+        try:
+            ov.show(d.win.NativeWindowHandle if d.win else 0)
+        except Exception:
+            ov.show()
+
+
 def _observe(target, mode, region, grid, marks, frames, interval, scale):
     d = state["desk"]
+    _overlay_on(d)  # looking is working too: keep the border up
     if isinstance(target, str) and target.isdigit():
         target = int(target)
     if mode == "windows":
@@ -397,7 +405,11 @@ def observe(target: str | int | None = None, mode: str = "auto", region: list[in
     burst (frames over time in one image, for motion) | windows (list top-level windows).
     target: window title substring or hwnd; default current target/foreground. region=[x0,y0,x1,y1]
     screen px limits shot/ocr/burst (zoom). scale = max image edge (up to 2576)."""
-    return _submit(_observe, target, mode, region, grid, marks, frames, interval, min(scale, 2576))
+    try:
+        return _submit(_observe, target, mode, region, grid, marks, frames, interval, min(scale, 2576))
+    finally:
+        if state["overlay"]:
+            state["overlay"].hide(LINGER)
 
 
 @mcp.tool()

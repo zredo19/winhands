@@ -82,7 +82,7 @@ irm https://raw.githubusercontent.com/zredo19/winhands/main/SKILL.md -OutFile ~/
 ```
 
 Any MCP client works: the server command is just `winhands` (stdio). Set `WINHANDS_OVERLAY=0` to hide the
-orange overlay and `WINHANDS_SHARED=0` for strict mode. From source: `pip install -e .` in a venv, then
+orange overlay, `WINHANDS_LINGER=45` for how long it stays up between actions and `WINHANDS_SHARED=0` for strict mode. From source: `pip install -e .` in a venv, then
 point the client at `python server.py`.
 
 ## Safety

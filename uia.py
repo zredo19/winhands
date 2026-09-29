@@ -278,6 +278,7 @@ class Desk:
         self.reg = Registry()
         self.last = {}          # hwnd -> {id: line} at last observe (diff baseline)
         self.flat = {}          # hwnd -> nodes of the latest snapshot (find() cache)
+        self.canvas = {}        # hwnd -> canvas-like at the latest observe (after_action skips its diff)
         self.win = None         # current target window (uiautomation Control)
         self.before = set()     # top-level windows before the current action
         self.hidden = set()     # our own overlay windows
@@ -429,7 +430,7 @@ class Desk:
         exe = _exe(w.ProcessId)
         r = trees[0]["rect"]
         head = f'window "{_clip(w.Name or "")}" hwnd={h} exe={exe} [{r[0]},{r[1]},{r[2]},{r[3]}]'
-        canvas = canvas_like(flatten(trees[0]), r)
+        canvas = self.canvas[h] = canvas_like(flatten(trees[0]), r)
         if mode == "diff" and h in self.last:
             body = diff(self.last[h], lines)
         else:
@@ -445,7 +446,8 @@ class Desk:
 
     def after_action(self):
         """Validate step: full tree of a new unrelated window, else diff of the target (+popups)."""
-        time.sleep(0.12)
+        fast = self._alive(self.win) and self.canvas.get(self.win.NativeWindowHandle)  # games/canvases
+        time.sleep(0.05 if fast else 0.12)
         new = [w for h, w in self._wins().items() if h not in self.before]
         if new and self._alive(self.win):
             owned = [w for w in new if _u32.GetAncestor(w.NativeWindowHandle, 3) == self.win.NativeWindowHandle]
@@ -459,6 +461,8 @@ class Desk:
         if not self._alive(self.win):
             self.win = None
             return "target window closed\n" + cap_lines(self.observe()["text"])
+        if fast:  # a canvas has no useful tree: skip the ~300 ms UIA diff
+            return f'window "{_clip(self.win.Name or "")}" (canvas: tree diff skipped, use show() / ocr())'
         return self.observe(mode="diff")["text"]
 
     # --- element access (fail closed) ---

@@ -11,7 +11,7 @@ from ctypes import wintypes as W
 
 GLOW = 26                                     # glow depth in px at 100% scaling
 EDGE, INNER = (255, 140, 60), (217, 119, 87)  # bright orange at the edge -> Claude orange inward
-WM_APP = 0x8000
+WM_APP, WM_TIMER = 0x8000, 0x0113
 ARROW = [(0, 0), (0, 21), (5, 16.5), (8.5, 24.5), (12, 23), (8.5, 15.5), (15, 15.5)]  # pointer, 1x units
 
 _u = ctypes.WinDLL("user32", use_last_error=True)  # private instances: argtypes never clash
@@ -39,6 +39,8 @@ for _f, _res, _args in [  # typed: 64-bit handles and hwnds above 2**31 must not
     (_u.GetMessageW, W.BOOL, (_P(W.MSG), W.HWND, W.UINT, W.UINT)),
     (_u.DispatchMessageW, W.LPARAM, (_P(W.MSG),)),
     (_u.ShowWindow, W.BOOL, (W.HWND, ctypes.c_int)),
+    (_u.SetTimer, ctypes.c_size_t, (W.HWND, ctypes.c_size_t, W.UINT, W.LPVOID)),
+    (_u.KillTimer, W.BOOL, (W.HWND, ctypes.c_size_t)),
     (_u.SetWindowPos, W.BOOL, (W.HWND, W.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, W.UINT)),
     (_u.IsWindow, W.BOOL, (W.HWND,)),
     (_u.MonitorFromWindow, W.HMONITOR, (W.HWND, W.DWORD)),
@@ -161,9 +163,10 @@ class Overlay:
         if self.hwnd:
             _u.PostMessageW(self.hwnd, WM_APP, 1, hwnd or 0)
 
-    def hide(self):
+    def hide(self, linger=0.0):
+        """Hide now, or after `linger` seconds unless show() comes first (the model is thinking)."""
         if self.hwnd:
-            _u.PostMessageW(self.hwnd, WM_APP, 0, 0)
+            _u.PostMessageW(self.hwnd, WM_APP, 0, round(linger * 1000))
 
     def point(self, x, y):
         """Show Claude's cursor at screen (x, y)."""
@@ -197,14 +200,22 @@ class Overlay:
                 _u.SetWindowPos(cur, -1, x - self.hot[0], y - self.hot[1], 0, 0, 0x11)  # TOPMOST, NOSIZE|NOACTIVATE
                 _u.ShowWindow(cur, 4)
                 continue
+            if msg.message == WM_TIMER and msg.hWnd == h:  # linger elapsed: nothing new, go away
+                _u.KillTimer(h, 1)
+                _u.ShowWindow(h, 0)
+                _u.ShowWindow(cur, 0)
+                continue
             if msg.message != WM_APP:
                 _u.DispatchMessageW(ctypes.byref(msg))
                 continue
             try:
                 if msg.wParam:
+                    _u.KillTimer(h, 1)
                     self._place(msg.lParam)
                     _u.ShowWindow(h, 4)                       # SW_SHOWNOACTIVATE
                     _u.SetWindowPos(h, -1, 0, 0, 0, 0, 0x13)  # HWND_TOPMOST, NOSIZE|NOMOVE|NOACTIVATE
+                elif msg.lParam > 0:
+                    _u.SetTimer(h, 1, msg.lParam, None)       # keep the border while the model thinks
                 else:
                     _u.ShowWindow(h, 0)                       # SW_HIDE
                     _u.ShowWindow(cur, 0)

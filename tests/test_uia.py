@@ -184,3 +184,18 @@ def test_usable_window_skips_broken_and_shell_windows(monkeypatch):
         NativeWindowHandle, Name, ProcessId = 6, "Nueva notificación", 1
     monkeypatch.setattr(uia, "_exe", lambda pid: "ShellExperienceHost.exe")
     assert uia.Desk._usable(Boom()) is False and uia.Desk._usable(Toast()) is False
+
+
+def test_after_action_skips_tree_diff_on_canvas_windows(monkeypatch):
+    import uia
+    d = object.__new__(uia.Desk)
+
+    class Win:
+        NativeWindowHandle, Name = 42, "Minecraft"
+    d.win, d.before, d.canvas = Win(), {42}, {42: True}
+    d._wins = lambda: {42: Win()}
+    d._alive = lambda w: True
+    d.observe = lambda *a, **k: (_ for _ in ()).throw(AssertionError("tree diff on a canvas window"))
+    monkeypatch.setattr(uia.time, "sleep", lambda s: None)
+    out = d.after_action()
+    assert "Minecraft" in out and "skipped" in out
