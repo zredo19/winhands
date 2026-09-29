@@ -1,4 +1,4 @@
-"""astra-cu: Astra-style computer use MCP server for Windows.
+"""winhands: computer use MCP server for Windows.
 
 observe: accessibility tree first (+ screenshot when the window is canvas-like), shots with
 grid / Set-of-Marks, OCR, burst montages.  run: Python in a persistent REPL (code mode) with
@@ -16,9 +16,9 @@ from mcp.server.mcpserver import Image, MCPServer
 import inputs, memory, vision
 from uia import INTERACTIVE, Desk
 
-SHARED = os.environ.get("ASTRA_SHARED", "1") != "0"  # 0 = strict: any user input aborts a run
+SHARED = os.environ.get("WINHANDS_SHARED", "1") != "0"  # 0 = strict: any user input aborts a run
 DENY = ["bitwarden", "1password", "keepass", "lastpass", "banco", "bank"]
-mcp = MCPServer("astra-cu")
+mcp = MCPServer("winhands")
 state = {"desk": None, "tid": None, "ns": None, "busy": False, "acting": False, "killed": False, "user": False,
          "mouse0": None, "seen": set(), "overlay": None, "user_t": 0.0}
 
@@ -164,7 +164,7 @@ class Hooks:
 
     def start(self):
         self.ready.clear()
-        self.thread = threading.Thread(target=self._loop, daemon=True, name="astra-hooks")
+        self.thread = threading.Thread(target=self._loop, daemon=True, name="winhands-hooks")
         self.thread.start()
         self.ready.wait(1)
 
@@ -422,7 +422,7 @@ def run(code: str, timeout: int = 30, confirm: bool = False):
 
 
 if __name__ == "__main__":
-    if os.environ.get("ASTRA_OVERLAY", "1") != "0":
+    if os.environ.get("WINHANDS_OVERLAY", "1") != "0":
         from overlay import Overlay
         ov = Overlay()
         if ov.ready.wait(5) and ov.hwnd:

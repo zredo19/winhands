@@ -1,11 +1,11 @@
 {
  "schema_chars": {
-  "astra-cu": 2851,
+  "winhands": 2851,
   "windows-mcp": 16741
  },
  "rows": [
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "calc",
    "rep": 0,
    "ok": true,
@@ -27,7 +27,7 @@
    ]
   },
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "notepad",
    "rep": 0,
    "ok": true,
@@ -54,7 +54,7 @@
    ]
   },
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "calc",
    "rep": 1,
    "ok": true,
@@ -76,7 +76,7 @@
    ]
   },
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "notepad",
    "rep": 1,
    "ok": true,
@@ -103,7 +103,7 @@
    ]
   },
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "calc",
    "rep": 2,
    "ok": true,
@@ -125,7 +125,7 @@
    ]
   },
   {
-   "server": "astra-cu",
+   "server": "winhands",
    "task": "notepad",
    "rep": 2,
    "ok": true,

@@ -1,7 +1,7 @@
-"""Cross-session memory: per-app notes and reusable skills (Voyager-style) under ~/.astra-cu."""
+"""Cross-session memory: per-app notes and reusable skills (Voyager-style) under ~/.winhands."""
 import os, pathlib, re
 
-HOME = pathlib.Path(os.path.expanduser("~")) / ".astra-cu"
+HOME = pathlib.Path(os.path.expanduser("~")) / ".winhands"
 
 
 def _app(app):

@@ -1,8 +1,9 @@
 [project]
-name = "astra-cu"
+name = "winhands"
 version = "0.2.0"
-description = "Astra-style computer use MCP server for Windows: a11y tree + pixels, code mode, game-grade input"
+description = "Computer use MCP server for Windows: a11y tree + pixels, code mode, game-grade input"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "mcp>=2.2",
     "uiautomation>=2.0.29",

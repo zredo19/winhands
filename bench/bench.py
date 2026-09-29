@@ -1,4 +1,4 @@
-"""Scripted A/B benchmark: astra-cu vs Windows-MCP on identical desktop tasks.
+"""Scripted A/B benchmark: winhands vs Windows-MCP on identical desktop tasks.
 
 Each task is driven the way an optimal agent would use each server (fewest calls the
 tool design allows). We measure tool calls, wall time, and the size of what each call
@@ -13,7 +13,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ASTRA = StdioServerParameters(command=sys.executable, args=[os.path.join(HERE, "..", "server.py")])
+WINHANDS = StdioServerParameters(command=sys.executable, args=[os.path.join(HERE, "..", "server.py")])
 OUT = tempfile.gettempdir()
 
 
@@ -87,7 +87,7 @@ CHECKS = []
 DIGITS = ["Uno", "Dos", "Tres", "Multiplicar por", "Cuatro", "Cinco", "Seis", "Es igual a"]
 
 
-# ---------------- tasks: astra-cu ----------------
+# ---------------- tasks: winhands ----------------
 async def a_calc(call):
     await call("run", code='app("calc.exe", title="Calculadora")')
     out = await call("run", code="\n".join(f'click(name="{n}", role="Button")' for n in DIGITS))
@@ -96,7 +96,7 @@ async def a_calc(call):
 
 async def a_notepad(call, path):
     await call("run", code='app("notepad.exe")')
-    await call("run", code='type("benchmark astra-cu", id=find(role="Edit", raw=True)[0])\n'
+    await call("run", code='type("benchmark winhands", id=find(role="Edit", raw=True)[0])\n'
                            'key("ctrl+shift+s")\nwait_for("Nombre:", role="Edit")')
     out = await call("run", confirm=True,  # sh() is Guardian-gated; this check is the benchmark's own
                      code=f'type(r"{path}", name="Nombre:", role="Edit", enter=True)\n'
@@ -120,7 +120,7 @@ async def w_calc(call):
 async def w_notepad(call, path):
     await call("App", mode="launch", name="Bloc de notas")
     tree = await call("Snapshot", use_vision=False)
-    await call("Type", loc=loc(tree, "Editor de texto"), text="benchmark astra-cu")
+    await call("Type", loc=loc(tree, "Editor de texto"), text="benchmark winhands")
     await call("Shortcut", shortcut="ctrl+shift+s")
     tree = await call("Snapshot", use_vision=False)
     await call("Type", loc=loc(tree, "Nombre:"), text=path, clear=True, press_enter=True)
@@ -156,11 +156,11 @@ async def run_suite(params, tasks, label, reps):
 async def main():
     wexe, reps = sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 2
     W = StdioServerParameters(command=wexe, args=["serve"])
-    sa, ra = await run_suite(ASTRA, [("calc", a_calc), ("notepad", a_notepad)], "astra-cu", reps)
+    sa, ra = await run_suite(WINHANDS, [("calc", a_calc), ("notepad", a_notepad)], "winhands", reps)
     sw, rw = await run_suite(W, [("calc", w_calc), ("notepad", w_notepad)], "windows-mcp", reps)
-    print("SCHEMA_CHARS", json.dumps({"astra-cu": sa, "windows-mcp": sw}))
+    print("SCHEMA_CHARS", json.dumps({"winhands": sa, "windows-mcp": sw}))
     with open(os.path.join(HERE, "results.json"), "w", encoding="utf-8") as f:
-        json.dump({"schema_chars": {"astra-cu": sa, "windows-mcp": sw}, "rows": ra + rw}, f,
+        json.dump({"schema_chars": {"winhands": sa, "windows-mcp": sw}, "rows": ra + rw}, f,
                   ensure_ascii=False, indent=1)
 
 

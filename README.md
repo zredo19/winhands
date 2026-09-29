@@ -1,10 +1,10 @@
-# astra-cu
+# winhands
 
-Astra-style computer use for Windows: a small MCP server that lets Claude (or any MCP client)
+Computer use for Windows: a small MCP server that lets Claude (or any MCP client)
 operate any desktop app, draw in canvases and drive games.
 
-It replicates the harness GPT-6 Astra uses in the Codex/ChatGPT desktop app, and goes past it
-where that harness is weak (no key holds, no raw mouse, no local control loops):
+Its design follows the computer-use harness of OpenAI's GPT-6 Astra in the Codex/ChatGPT desktop app,
+and goes past it where that harness is weak (no key holds, no raw mouse, no local control loops):
 
 1. **Accessibility tree first, pixels when needed.** A Codex-style UI Automation tree
    (`12 button "Save" (focused)`), plus screenshots automatically when a window is canvas-like
@@ -51,12 +51,12 @@ There were 3 reps per task. Script: [`bench/bench.py`](bench/bench.py), raw data
 
 | Task | Server | Success | Tool calls | Tool time | Tokens returned |
 |---|---|---|---|---|---|
-| Calculator 123×456 | **astra-cu** | **3/3** | **2** | **8.0 s** | **603** |
+| Calculator 123×456 | **winhands** | **3/3** | **2** | **8.0 s** | **603** |
 | | Windows-MCP 0.8.5 | 2/3 | 12 | 31.0 s | 6,060 |
-| Notepad: type, Save As, verify file | **astra-cu** | **3/3** | **3** | **12.9 s** | **2,037** |
+| Notepad: type, Save As, verify file | **winhands** | **3/3** | **3** | **12.9 s** | **2,037** |
 | | Windows-MCP 0.8.5 | 3/3 | 7 | 21.6 s | 8,601 |
 
-The tool schema is sent on every turn: astra-cu uses about 815 tokens and Windows-MCP about 4,780.
+The tool schema is sent on every turn: winhands uses about 815 tokens and Windows-MCP about 4,780.
 
 Notes on method:
 - Tokens are estimated: text is chars / 3.5, and images are `ceil(w/28)·ceil(h/28)` per Anthropic's vision docs.
@@ -69,27 +69,27 @@ Notes on method:
 
 ```bash
 # Python 3.12 venv on an SSD (cold imports from an HDD can exceed the 30 s MCP startup timeout)
-python -m venv %USERPROFILE%\.astra-cu\venv
-%USERPROFILE%\.astra-cu\venv\Scripts\pip install -e .
-claude mcp add astra-cu --scope user -- %USERPROFILE%\.astra-cu\venv\Scripts\python.exe C:\path\to\astra-cu\server.py
+python -m venv %USERPROFILE%\.winhands\venv
+%USERPROFILE%\.winhands\venv\Scripts\pip install -e .
+claude mcp add winhands --scope user -- %USERPROFILE%\.winhands\venv\Scripts\python.exe C:\path\to\winhands\server.py
 ```
 
-Copy `SKILL.md` to `~/.claude/skills/astra-cu/SKILL.md` so Claude follows the perceive → batch →
-validate protocol, the game guidance and the safety rules. Set `ASTRA_OVERLAY=0` to disable the banner.
+Copy `SKILL.md` to `~/.claude/skills/winhands/SKILL.md` so Claude follows the perceive → batch →
+validate protocol, the game guidance and the safety rules. Set `WINHANDS_OVERLAY=0` to disable the banner.
 
 ## Safety
 
 - **Ctrl + Left Alt + Q** aborts the running action. AltGr+Q still types `@`.
 - Shared mode (default): the user can keep working while a run acts through UIA patterns. Physical input
   that collides with a run driving the real mouse/keyboard aborts it (`UserInterrupt`); real input waits for
-  the user to go idle first. The tool never fights the user for control. `ASTRA_SHARED=0` restores strict mode.
+  the user to go idle first. The tool never fights the user for control. `WINHANDS_SHARED=0` restores strict mode.
 - The low-level keyboard/mouse hooks behind both features exist only while a `run` is acting. Nothing hooks
   system input while the server idles in a Claude Code session.
 - Keys are only sent to a verified foreground target. All held keys and buttons are released on any abort.
 - `sh()` and clicks on elements named like Send, Buy, Pay, Delete, Install or Allow require `run(..., confirm=True)`.
 - Denylisted windows (password managers, banking) are refused.
 - `run` executes arbitrary Python: the same privilege as Claude Code's shell tool, gated by the client's permission prompts.
-- Online games with anti-cheat: automation may violate their terms and risk a ban. astra-cu makes
+- Online games with anti-cheat: automation may violate their terms and risk a ban. winhands makes
   no attempt to hide or evade detection.
 
 ## Limits

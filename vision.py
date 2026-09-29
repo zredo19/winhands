@@ -29,7 +29,7 @@ for _f, _a, _r in ((_u32.GetWindowRect, (W.HWND, ctypes.POINTER(W.RECT)), W.BOOL
     _f.argtypes, _f.restype = _a, _r
 
 FONTS = "C:/Windows/Fonts/"
-HOME = os.path.join(os.path.expanduser("~"), ".astra-cu")
+HOME = os.path.join(os.path.expanduser("~"), ".winhands")
 check = None      # set by the server: raises on kill switch / user interrupt
 cover = None      # set by the server: region -> hwnd of a covered target window holding it, else None
 pending = []      # (jpeg bytes, caption) queued by show() for the current run
@@ -445,7 +445,7 @@ def save_template(name, region):
 
 
 def locate(tpl, region=None, threshold=0.85):
-    """Find a template (name in ~/.astra-cu/templates, path, PIL image or array) on screen ->
+    """Find a template (name in ~/.winhands/templates, path, PIL image or array) on screen ->
     (x, y, score) screen centre or None. Exact scale only (re-save templates if UI scale changes)."""
     import cv2
     if isinstance(tpl, str):

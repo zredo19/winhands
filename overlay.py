@@ -150,11 +150,11 @@ def _layered():
 
 
 class Overlay:
-    def __init__(self, text="astra-cu is controlling this PC  -  Ctrl+Alt+Q to stop"):
+    def __init__(self, text="winhands is controlling this PC  -  Ctrl+Alt+Q to stop"):
         self.text, self.hwnd, self.error, self.painted = text, None, None, None
         self.cur, self.hot, self.pos = None, (0, 0), None
         self.ready = threading.Event()
-        threading.Thread(target=self._run, daemon=True, name="astra-overlay").start()
+        threading.Thread(target=self._run, daemon=True, name="winhands-overlay").start()
 
     def show(self, hwnd=0):
         """Cover hwnd's monitor (the primary one when 0 or closed)."""
