@@ -21,6 +21,9 @@ dependencies = [
     "winrt-Windows.Globalization",
 ]
 
+[project.scripts]
+winhands = "server:main"
+
 [project.optional-dependencies]
 dev = ["pytest"]
 

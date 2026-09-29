@@ -421,7 +421,7 @@ def run(code: str, timeout: int = 30, confirm: bool = False):
     return _submit(_exec, code, confirm, timeout=max(1, min(timeout, 600)))
 
 
-if __name__ == "__main__":
+def main():
     if os.environ.get("WINHANDS_OVERLAY", "1") != "0":
         from overlay import Overlay
         ov = Overlay()
@@ -430,3 +430,7 @@ if __name__ == "__main__":
             inputs.on_move = ov.point
             EXEC.submit(lambda: state["desk"].hidden.update((ov.hwnd, ov.cur)))
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

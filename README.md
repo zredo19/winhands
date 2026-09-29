@@ -67,15 +67,23 @@ Notes on method:
 
 ## Install
 
-```bash
-# Python 3.12 venv on an SSD (cold imports from an HDD can exceed the 30 s MCP startup timeout)
-python -m venv %USERPROFILE%\.winhands\venv
-%USERPROFILE%\.winhands\venv\Scripts\pip install -e .
-claude mcp add winhands --scope user -- %USERPROFILE%\.winhands\venv\Scripts\python.exe C:\path\to\winhands\server.py
+Windows 10 2004+ / 11, Python 3.11+. With [uv](https://docs.astral.sh/uv/):
+
+```powershell
+uv tool install git+https://github.com/zredo19/winhands
+claude mcp add winhands --scope user -- winhands
 ```
 
-Copy `SKILL.md` to `~/.claude/skills/winhands/SKILL.md` so Claude follows the perceive → batch →
-validate protocol, the game guidance and the safety rules. Set `WINHANDS_OVERLAY=0` to disable the banner.
+Then give Claude the protocol (perceive → batch → validate, game guidance, safety rules):
+
+```powershell
+New-Item -ItemType Directory -Force ~/.claude/skills/winhands | Out-Null
+irm https://raw.githubusercontent.com/zredo19/winhands/main/SKILL.md -OutFile ~/.claude/skills/winhands/SKILL.md
+```
+
+Any MCP client works: the server command is just `winhands` (stdio). Set `WINHANDS_OVERLAY=0` to hide the
+orange overlay and `WINHANDS_SHARED=0` for strict mode. From source: `pip install -e .` in a venv, then
+point the client at `python server.py`.
 
 ## Safety
 
