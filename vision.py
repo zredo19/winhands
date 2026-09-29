@@ -4,7 +4,7 @@ Capture, shots (grid / Set-of-Marks / region zoom) with image->screen transforms
 montages, Windows OCR, template and color search, change/stability waits.
 All coordinates in and out are physical screen px unless a function says otherwise.
 """
-import ctypes, io, math, os, threading, time
+import ctypes, io, math, os, re, threading, time
 from ctypes import wintypes as W
 from dataclasses import dataclass
 
@@ -31,6 +31,7 @@ for _f, _a, _r in ((_u32.GetWindowRect, (W.HWND, ctypes.POINTER(W.RECT)), W.BOOL
 FONTS = "C:/Windows/Fonts/"
 HOME = os.path.join(os.path.expanduser("~"), ".astra-cu")
 check = None      # set by the server: raises on kill switch / user interrupt
+cover = None      # set by the server: region -> hwnd of a covered target window holding it, else None
 pending = []      # (jpeg bytes, caption) queued by show() for the current run
 SHOTS = {}        # shot id -> Shot (recent only)
 _ids = iter(range(1, 10 ** 9))
@@ -216,10 +217,20 @@ def _box(region):
     return {"left": x0, "top": y0, "width": max(1, x1 - x0), "height": max(1, y1 - y0)}
 
 
-def grab_img(region=None):
-    """PIL RGB image of a screen region (x0, y0, x1, y1); None = whole virtual desktop."""
+def _screen(region=None):
     raw = _sct().grab(_box(region))
     return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+
+def grab_img(region=None):
+    """PIL RGB image of a screen region (x0, y0, x1, y1); None = whole virtual desktop.
+    A region inside a covered target window is read from that window (PrintWindow), not the screen."""
+    h = cover(region) if region and cover else None
+    if not h:
+        return _screen(region)
+    img, wb = grab_window(h)
+    x0, y0, x1, y1 = map(round, region)
+    return img.crop((x0 - wb[0], y0 - wb[1], x1 - wb[0], y1 - wb[1]))
 
 
 def grab(region=None):
@@ -253,7 +264,7 @@ def grab_window(hwnd):
         g.DeleteDC(mdc)
         u.ReleaseDC(hwnd, wdc)
     if max(e[1] for e in img.getextrema()) < 8:
-        img = grab_img(rect)
+        img = _screen(rect)
     return img, rect
 
 
@@ -345,14 +356,33 @@ def _engine(lang=None):
     return _engines[lang]
 
 
-def ocr_image(img, scale=2.0, lang=None):
+def prep_ocr(img, scale, pixel=False):
+    """Grey + upscale for the engine. pixel=True (game HUD fonts): NEAREST keeps glyphs crisp, then
+    binarize to dark text on white (the engine misreads thin pixel strokes on busy backgrounds)."""
+    g = img.convert("L")
+    if scale != 1:
+        g = g.resize((round(g.width * scale), round(g.height * scale)),
+                     Image.Resampling.NEAREST if pixel else Image.Resampling.LANCZOS)
+    if pixel:
+        a = np.asarray(g)
+        lo, hi = np.percentile(a, (5, 95))
+        light = a > (lo + hi) / 2
+        text = light if light.mean() < 0.5 else ~light  # the minority class is the text
+        g = Image.fromarray(np.where(text, 0, 255).astype(np.uint8))
+    return g
+
+
+def fix_pixel_text(t):
+    """Pixel-font minus signs come back as dashes."""
+    return re.sub(r"[—–−]", "-", t)
+
+
+def ocr_image(img, scale=2.0, lang=None, pixel=False):
     """PIL image -> [(line, [(word, (x0, y0, x1, y1))])] in image coords. Polls the async op:
     .get() raises on STA threads (our UIA worker). One recognition at a time per engine."""
     from winrt.windows.foundation import AsyncStatus
     from winrt.windows.graphics.imaging import BitmapPixelFormat, SoftwareBitmap
-    g = img.convert("L")
-    if scale != 1:
-        g = g.resize((round(g.width * scale), round(g.height * scale)), Image.Resampling.LANCZOS)
+    g = prep_ocr(img, scale, pixel)
     pad = 24 if min(g.size) < 48 else 0  # engine returns nothing for inputs < 40 px on a side
     if pad:
         g = ImageOps.expand(g, pad, fill=g.getpixel((0, 0)))
@@ -361,28 +391,30 @@ def ocr_image(img, scale=2.0, lang=None):
     while op.status == AsyncStatus.STARTED:
         time.sleep(0.002)
     res = op.get_results()
-    return [(ln.text, [(w.text, (((r := w.bounding_rect).x - pad) / scale, (r.y - pad) / scale,
+    fix = fix_pixel_text if pixel else (lambda t: t)
+    return [(fix(ln.text), [(fix(w.text), (((r := w.bounding_rect).x - pad) / scale, (r.y - pad) / scale,
                                  (r.x + r.width - pad) / scale, (r.y + r.height - pad) / scale))
                        for w in ln.words]) for ln in res.lines]
 
 
-def _ocr_raw(region=None, scale=None, lang=None, hwnd=None):
+def _ocr_raw(region=None, scale=None, lang=None, hwnd=None, pixel=False):
     img, box = capture(region, hwnd)
     if scale is None:
         scale = 2.0 if img.width * img.height <= 1_000_000 else 1.0
-    return ocr_image(img, scale, lang), box[:2]
+    return ocr_image(img, scale, lang, pixel), box[:2]
 
 
-def ocr(region=None, scale=None, lang=None, hwnd=None):
+def ocr(region=None, scale=None, lang=None, hwnd=None, pixel=False):
     """Read text -> [(line, (x0, y0, x1, y1) screen)]. hwnd reads a (possibly covered) window.
+    pixel=True for pixel fonts (game HUDs such as Minecraft F3).
     Isolated single characters (HUD digits) are not read: use locate() templates for those."""
-    lines, origin = _ocr_raw(region, scale, lang, hwnd)
+    lines, origin = _ocr_raw(region, scale, lang, hwnd, pixel)
     return format_ocr(lines, origin)
 
 
-def find_text(text, region=None, scale=None, hwnd=None):
+def find_text(text, region=None, scale=None, hwnd=None, pixel=False):
     """Screen centre of the best match for text (exact word first, then substring), or None."""
-    lines, (ox, oy) = _ocr_raw(region, scale, None, hwnd)
+    lines, (ox, oy) = _ocr_raw(region, scale, None, hwnd, pixel)
     t = text.lower()
     words = [(w, b) for _, ws in lines for w, b in ws]
     hit = next((b for w, b in words if w.lower() == t), None)

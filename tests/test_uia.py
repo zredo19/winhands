@@ -162,3 +162,25 @@ def test_stale_reason():
 def test_risky_names():
     assert risky("Enviar") and risky("Comprar ahora") and risky("Delete file") and risky("Instalar")
     assert not risky("Guardar") and not risky("Abrir") and not risky("")
+
+
+def test_cap_lines_truncates_long_dumps():
+    from uia import cap_lines
+    out = cap_lines("\n".join(str(i) for i in range(100)), 40).splitlines()
+    assert len(out) == 41 and out[-1].startswith("... +60 lines")
+    assert cap_lines("a\nb", 40) == "a\nb"
+
+
+def test_usable_window_skips_broken_and_shell_windows(monkeypatch):
+    import uia
+
+    class Boom:
+        NativeWindowHandle = 5
+        @property
+        def Name(self):
+            raise OSError("COM event failed")
+
+    class Toast:
+        NativeWindowHandle, Name, ProcessId = 6, "Nueva notificación", 1
+    monkeypatch.setattr(uia, "_exe", lambda pid: "ShellExperienceHost.exe")
+    assert uia.Desk._usable(Boom()) is False and uia.Desk._usable(Toast()) is False

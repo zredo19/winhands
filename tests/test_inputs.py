@@ -38,3 +38,26 @@ def test_extended_flag_only_for_e0_codes():
     assert inputs.key_input(0xE048).u.ki.dwFlags & 0x1          # EXTENDEDKEY
     assert not inputs.key_input(0x38).u.ki.dwFlags & 0x1        # left Alt is NOT extended
     assert inputs.key_input(0x38, up=True).u.ki.dwFlags & 0x2   # KEYUP
+
+
+def test_busy_only_while_injecting_or_holding(monkeypatch):
+    monkeypatch.setattr(inputs, "held", set())
+    inputs.last[0] = 0.0
+    assert not inputs.busy()
+    inputs.last[0] = inputs.time.monotonic()
+    assert inputs.busy()
+    inputs.last[0] = 0.0
+    inputs.held.add(("key", 0x11))
+    assert inputs.busy()
+
+
+def test_touch_asks_guard_before_marking(monkeypatch):
+    def refuse():
+        raise RuntimeError("user is busy")
+    monkeypatch.setattr(inputs, "guard", refuse)
+    inputs.last[0] = 0.0
+    try:
+        inputs.touch()
+    except RuntimeError:
+        pass
+    assert inputs.last[0] == 0.0

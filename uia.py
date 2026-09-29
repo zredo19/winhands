@@ -17,6 +17,7 @@ DROP = {"scroll bar", "thumb", "separator", "tool tip"}
 CANVAS_ROLES = {"pane", "custom", "image", "document", "group"}
 CONTAINERS = {"pane", "tool bar", "tab", "group", "custom", "menu bar", "status bar", "title bar",
               "list", "tree", "table", "header", "window"}
+SHELL_HOSTS = {"shellexperiencehost.exe", "startmenuexperiencehost.exe", "searchhost.exe"}  # toasts, flyouts
 RISKY = re.compile(r"\b(enviar|send|comprar|buy|pagar|pay|purchase|checkout|eliminar|delete|remove|"
                    r"instalar|install|permitir|allow|transferir|transfer|place order|suscribir|subscribe)\b", re.I)
 
@@ -38,6 +39,14 @@ def role_name(control_type_name):
 
 def risky(name):
     return bool(name) and bool(RISKY.search(name))
+
+
+def cap_lines(text, n=60):
+    """Keep dumps short: first n lines + a count of the rest."""
+    lines = text.splitlines()
+    if len(lines) <= n:
+        return text
+    return "\n".join(lines[:n] + [f"... +{len(lines) - n} lines (observe() for all)"])
 
 
 def _clip(s, n=MAX_NAME):
@@ -287,8 +296,23 @@ class Desk:
 
     # --- windows ---
     def _wins(self):
-        return {w.NativeWindowHandle: w for w in self.auto.GetRootControl().GetChildren()
-                if w.NativeWindowHandle and w.NativeWindowHandle not in self.hidden}
+        out = {}
+        for w in self.auto.GetRootControl().GetChildren():
+            try:  # transient windows (toasts) can vanish mid-read: COMError
+                h = w.NativeWindowHandle
+            except Exception:
+                continue
+            if h and h not in self.hidden:
+                out[h] = w
+        return out
+
+    @staticmethod
+    def _usable(w):
+        """A real app window: readable, and not a shell toast/flyout that popped up meanwhile."""
+        try:
+            return w.Name is not None and _exe(w.ProcessId).lower() not in SHELL_HOSTS
+        except Exception:
+            return False
 
     @staticmethod
     def _alive(w):
@@ -428,13 +452,13 @@ class Desk:
             if len(owned) < len(new):
                 fg = _u32.GetForegroundWindow()
                 self.win = next((w for w in new if w.NativeWindowHandle == fg), new[-1])
-                return self.observe()["text"]
+                return cap_lines(self.observe()["text"])
         elif new:
             self.win = new[-1]
-            return self.observe()["text"]
+            return cap_lines(self.observe()["text"])
         if not self._alive(self.win):
             self.win = None
-            return "target window closed\n" + self.observe()["text"]
+            return "target window closed\n" + cap_lines(self.observe()["text"])
         return self.observe(mode="diff")["text"]
 
     # --- element access (fail closed) ---
@@ -517,6 +541,7 @@ class Desk:
         fg = _u32.GetForegroundWindow()
         if fg == h or _u32.GetAncestor(fg, 3) == h:
             return
+        inputs.touch()  # stealing the foreground is real input: shared-mode guard applies
         if _u32.IsIconic(h):
             _u32.ShowWindow(h, 9)  # SW_RESTORE
         if not _u32.SetForegroundWindow(h):
@@ -639,7 +664,7 @@ class Desk:
         while time.time() < end:
             self.stop()
             time.sleep(0.3)
-            new = [w for h, w in self._wins().items() if h not in before
+            new = [w for h, w in self._wins().items() if h not in before and self._usable(w)
                    and (not title or title.lower() in (w.Name or "").lower())]
             if new:
                 w = new[0]
@@ -652,6 +677,23 @@ class Desk:
                 self.before = set(self._wins())
                 return w.Name
         raise TimeoutError(f"no new window after launching {cmd!r}")
+
+    def wait_window(self, title=None, exe=None, timeout=30.0):
+        """Block until a top-level window matching title substring and/or exe name exists, then target it."""
+        t, e, end = (title or "").lower(), (exe or "").lower(), time.time() + timeout
+        while time.time() < end:
+            self.stop()
+            for w in self._wins().values():
+                try:
+                    ok = self._usable(w) and t in (w.Name or "").lower() and (not e or _exe(w.ProcessId).lower() == e)
+                except Exception:
+                    continue
+                if ok:
+                    self._guard(w)
+                    self.win = w
+                    return w.Name
+            time.sleep(0.5)
+        raise TimeoutError(f"no window title~{title!r} exe={exe!r} after {timeout}s")
 
     @staticmethod
     def _spawn(cmd):

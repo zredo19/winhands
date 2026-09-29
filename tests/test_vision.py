@@ -67,3 +67,29 @@ def test_grid_and_marks_render_without_error():
     assert g.size == (422, 322)
     m = marks(img, [(1, (10, 10, 60, 40)), (2, (100, 100, 180, 140))])
     assert m.size == img.size
+
+
+def test_region_capture_crops_covered_target_window(monkeypatch):
+    import vision
+    win = Image.new("RGB", (200, 200), (255, 0, 0))
+    monkeypatch.setattr(vision, "cover", lambda region: 123)
+    monkeypatch.setattr(vision, "grab_window", lambda h: (win, (100, 100, 300, 300)))
+    monkeypatch.setattr(vision, "_screen", lambda region: (_ for _ in ()).throw(AssertionError("screen used")))
+    img = vision.grab_img((150, 150, 160, 170))
+    assert img.size == (10, 20) and img.getpixel((0, 0)) == (255, 0, 0)
+
+
+def test_region_capture_uses_screen_when_target_is_visible(monkeypatch):
+    import vision
+    monkeypatch.setattr(vision, "cover", lambda region: None)
+    monkeypatch.setattr(vision, "_screen", lambda region: Image.new("RGB", (5, 5), (0, 0, 255)))
+    assert vision.grab_img((0, 0, 5, 5)).getpixel((2, 2)) == (0, 0, 255)
+
+
+def test_pixel_font_prep_keeps_hard_edges():
+    import vision
+    img = Image.new("L", (2, 1))
+    img.putpixel((1, 0), 255)
+    big = vision.prep_ocr(img, 3, pixel=True)
+    assert big.size == (6, 3) and set(big.tobytes()) == {0, 255}   # no blurred grey
+    assert vision.fix_pixel_text("(—73.4 / –1.4)") == "(-73.4 / -1.4)"

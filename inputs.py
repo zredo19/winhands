@@ -57,6 +57,9 @@ BTN = {"left": (0x0002, 0x0004), "right": (0x0008, 0x0010), "middle": (0x0020, 0
 TAP = 0.04       # games poll key state per frame: taps shorter than ~30 ms get lost
 check = None     # set by the server: raises on kill switch / user interrupt
 held = set()     # ("key", scan) / ("btn", name) currently pressed by us
+last = [0.0]     # monotonic time of our latest real input or focus steal
+guard = None     # set by the server (shared mode): raises if the user is using the PC right now
+on_move = None   # set by the server: (x, y) of each absolute move, drawn as the overlay cursor
 
 
 # ---------- pure helpers ----------
@@ -106,8 +109,25 @@ def mouse_input(dx=0, dy=0, flags=0, data=0):
 
 # ---------- raw send ----------
 
+def busy(window=0.5):
+    """We drive the real mouse/keyboard right now: something held, or injected very recently."""
+    return bool(held) or time.monotonic() - last[0] < window
+
+
+def touch():
+    """Before any real input or focus steal: yield to a busy user (guard), then mark the moment."""
+    if guard:
+        guard()
+    last[0] = time.monotonic()
+
+
 def send(*inputs):
     """Atomic batch. Input into elevated windows is silently dropped by UIPI (not reported)."""
+    touch()
+    _raw(*inputs)
+
+
+def _raw(*inputs):
     n = len(inputs)
     if _u32.SendInput(n, (INPUT * n)(*inputs), ctypes.sizeof(INPUT)) != n:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -211,6 +231,8 @@ def move(x, y):
     """Absolute move to physical virtual-desktop pixel (monitor left of primary => negative x)."""
     vx, vy, vw, vh = _virtual()
     send(mouse_input(_norm(round(x) - vx, vw), _norm(round(y) - vy, vh), 0x0001 | 0x4000 | 0x8000))
+    if on_move:
+        on_move(round(x), round(y))
 
 
 def move_rel(dx, dy, steps=1, duration=0.0):
@@ -274,7 +296,7 @@ def release_all():
     """Release everything we hold (on kill/timeout/error)."""
     for kind, v in sorted(held, reverse=True):
         try:
-            send(mouse_input(flags=BTN[v][1]) if kind == "btn" else key_input(v, up=True))
+            _raw(mouse_input(flags=BTN[v][1]) if kind == "btn" else key_input(v, up=True))  # no guard
         except Exception:
             pass
     held.clear()

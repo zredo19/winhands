@@ -14,7 +14,8 @@ where that harness is weak (no key holds, no raw mouse, no local control loops):
 3. **Built-in validation.** Every `run` returns a UI diff (or the full tree of a new dialog).
 4. **Fail closed.** Element ids are bound to the latest snapshot; changed or vanished targets raise
    `StaleTarget` instead of clicking the wrong thing.
-5. **Takeover UX and safety.** A red border and banner while acting, excluded from screenshots.
+5. **Takeover UX and safety.** An orange glow border and banner on the controlled monitor while acting, plus an orange-edged
+   cursor where real input lands, all excluded from screenshots.
    Ctrl+LeftAlt+Q kill switch, and an automatic abort when the user touches mouse or keyboard.
    Held inputs are released on abort, risky actions need confirmation, and some windows are denylisted.
 6. **Memory.** Per-app notes and reusable skills (Voyager-style) that persist across sessions.
@@ -79,7 +80,9 @@ validate protocol, the game guidance and the safety rules. Set `ASTRA_OVERLAY=0`
 ## Safety
 
 - **Ctrl + Left Alt + Q** aborts the running action. AltGr+Q still types `@`.
-- Physical keyboard or mouse input during a run aborts it (`UserInterrupt`). The tool never fights the user for control.
+- Shared mode (default): the user can keep working while a run acts through UIA patterns. Physical input
+  that collides with a run driving the real mouse/keyboard aborts it (`UserInterrupt`); real input waits for
+  the user to go idle first. The tool never fights the user for control. `ASTRA_SHARED=0` restores strict mode.
 - The low-level keyboard/mouse hooks behind both features exist only while a `run` is acting. Nothing hooks
   system input while the server idles in a Claude Code session.
 - Keys are only sent to a verified foreground target. All held keys and buttons are released on any abort.
