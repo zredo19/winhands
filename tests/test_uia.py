@@ -199,3 +199,117 @@ def test_after_action_skips_tree_diff_on_canvas_windows(monkeypatch):
     monkeypatch.setattr(uia.time, "sleep", lambda s: None)
     out = d.after_action()
     assert "Minecraft" in out and "skipped" in out
+
+
+def test_is_chat_matches_exe_or_window_title():
+    from uia import is_chat
+    assert is_chat("Discord.exe", "valorador | servidor - Discord")
+    assert is_chat("chrome.exe", "(1) WhatsApp - Google Chrome")           # WhatsApp Web in a browser
+    assert is_chat("ms-teams.exe", "") and is_chat("slack.exe", "") and is_chat("Signal.exe", "")
+    assert is_chat("Telegram.exe", "") and is_chat("Messenger.exe", "")
+    assert not is_chat("chrome.exe", "Cursos - Universidad Adolfo Ibáñez - Google Chrome")
+    assert not is_chat("notepad.exe", "notes.txt")
+
+
+def test_route_line_flags_target_foreground_mismatch():
+    from uia import route_line
+    t = {"title": "UAI Online", "hwnd": 1, "exe": "chrome.exe"}
+    f = {"title": "Discord", "hwnd": 2, "exe": "Discord.exe"}
+    assert "MISMATCH" in route_line(t, f) and "MISMATCH" in route_line(None, f)
+    ok = route_line(t, t)
+    assert "MISMATCH" not in ok and "hwnd=1" in ok and ok.startswith("input: target")
+
+
+def test_route_note_only_after_real_input(monkeypatch):
+    import uia
+    d = object.__new__(uia.Desk)
+    info = {"title": "W", "hwnd": 1, "exe": "x.exe"}
+    d.target_info, d.foreground_info = lambda: info, lambda: info
+    monkeypatch.setattr(uia.inputs, "last", [100.0])
+    assert d.route_note(since=200.0) == ""                    # nothing was injected during this run
+    assert d.route_note(since=50.0).startswith("input: target")
+
+
+def _chat_desk(monkeypatch, exe, title, confirmed=False):
+    import uia
+
+    class W:
+        NativeWindowHandle, Name, ProcessId = 7, title, 1
+    w = W()
+    monkeypatch.setattr(uia, "_exe", lambda pid: exe)
+    d, sent = object.__new__(uia.Desk), []
+    d.confirmed, d.win = confirmed, w
+    d.resolve = lambda target=None: w
+    d._front = lambda w=None: None
+    d.foreground_info = lambda: {"title": title, "hwnd": 7, "exe": exe}
+    monkeypatch.setattr(uia.inputs, "press", lambda spec, times=1, **k: sent.append(spec))
+    monkeypatch.setattr(uia.inputs, "text", lambda s: sent.append(s))
+    return d, sent
+
+
+def test_enter_in_chat_app_needs_confirm(monkeypatch):
+    import pytest, uia
+    d, sent = _chat_desk(monkeypatch, "Discord.exe", "general - Discord")
+    with pytest.raises(uia.GuardBlocked):
+        d.type("hi", enter=True)
+    for spec in ("enter", "ctrl+enter"):
+        with pytest.raises(uia.GuardBlocked):
+            d.key(spec)
+    assert sent == []                                          # not even the text was typed
+    d.type("draft")                                            # typing a draft is harmless
+    d.key("ctrl+s")
+    assert sent == ["draft", "ctrl+s"]
+
+
+def test_enter_in_chat_app_allowed_when_confirmed_or_not_chat(monkeypatch):
+    d, sent = _chat_desk(monkeypatch, "Discord.exe", "general - Discord", confirmed=True)
+    d.type("hi", enter=True)
+    assert sent == ["hi", "enter"]
+    d, sent = _chat_desk(monkeypatch, "notepad.exe", "notes.txt")
+    d.type("hi", enter=True)
+    d.key("enter")
+    assert sent == ["hi", "enter", "enter"]
+
+
+def test_enter_in_whatsapp_web_tab_needs_confirm(monkeypatch):
+    import pytest, uia
+    d, _ = _chat_desk(monkeypatch, "chrome.exe", "(1) WhatsApp - Google Chrome")
+    with pytest.raises(uia.GuardBlocked):
+        d.key("enter")
+
+
+def test_app_notes_when_window_could_not_be_brought_to_front(monkeypatch):
+    import uia
+
+    class Win:
+        NativeWindowHandle, Name, ProcessId = 9, "Paint", 1
+
+    def desk(front):
+        d, calls = object.__new__(uia.Desk), []
+        d._wins = lambda: {9: Win()} if calls else (calls.append(1) or {})
+        d._usable, d._guard, d.stop, d._spawn, d._front = (lambda w: True), (lambda w: None), (lambda: None), \
+            (lambda cmd: None), front
+        d.win = None
+        return d
+    monkeypatch.setattr(uia.time, "sleep", lambda s: None)
+
+    def boom(w=None):
+        raise RuntimeError("could not bring 'Paint' to front; input not sent")
+    out = desk(boom).app("mspaint.exe")
+    assert out.startswith("Paint") and "not brought to front" in out and "could not bring" in out
+    assert desk(lambda w=None: None).app("mspaint.exe") == "Paint"
+
+
+def test_focus_accepts_hwnd_and_title_keywords():
+    import uia
+    d, seen = object.__new__(uia.Desk), []
+
+    class W:
+        NativeWindowHandle, Name = 1, "Chrome"
+    d.resolve = lambda target=None: (seen.append(target), W())[1]
+    d._front = lambda w=None: None
+    assert d.focus(5) == "Chrome"
+    d.focus(hwnd=6)
+    d.focus(title="Chrome")
+    d.focus()
+    assert seen == [5, 6, "Chrome", None]

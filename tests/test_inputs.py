@@ -61,3 +61,14 @@ def test_touch_asks_guard_before_marking(monkeypatch):
     except RuntimeError:
         pass
     assert inputs.last[0] == 0.0
+
+
+def test_mouse_down_reports_the_click_to_the_overlay(monkeypatch):
+    sent, clicks = [], []
+    monkeypatch.setattr(inputs, "send", lambda *a: sent.append(a))
+    monkeypatch.setattr(inputs, "on_click", clicks.append, raising=False)
+    monkeypatch.setattr(inputs, "held", set())
+    inputs.mouse_down("right")
+    assert clicks == ["right"] and len(sent) == 1
+    inputs.mouse_up("right")
+    assert clicks == ["right"]                                  # a release is not a click

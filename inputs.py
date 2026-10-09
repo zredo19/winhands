@@ -60,6 +60,7 @@ held = set()     # ("key", scan) / ("btn", name) currently pressed by us
 last = [0.0]     # monotonic time of our latest real input or focus steal
 guard = None     # set by the server (shared mode): raises if the user is using the PC right now
 on_move = None   # set by the server: (x, y) of each absolute move, drawn as the overlay cursor
+on_click = None  # set by the server: button name of each press, played as the overlay click ripple
 
 
 # ---------- pure helpers ----------
@@ -249,6 +250,8 @@ def move_rel(dx, dy, steps=1, duration=0.0):
 def mouse_down(btn="left"):
     send(mouse_input(flags=BTN[btn][0]))
     held.add(("btn", btn))
+    if on_click:
+        on_click(btn)
 
 
 def mouse_up(btn="left"):

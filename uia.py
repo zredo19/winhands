@@ -22,6 +22,11 @@ RISKY = re.compile(r"\b(enviar|send|comprar|buy|pagar|pay|purchase|checkout|elim
                    r"instalar|install|permitir|allow|transferir|transfer|place order|suscribir|subscribe)\b", re.I)
 
 
+# Enter in these sends a message: type(enter=True) / key('enter') need run(..., confirm=True).
+# Matched against the exe name and the window title (WhatsApp Web lives in a browser title).
+CHAT_APPS = re.compile(r"discord|whatsapp|telegram|slack|teams|signal|messenger", re.I)
+
+
 class StaleTarget(Exception):
     """The element changed or disappeared since the snapshot: observe again."""
 
@@ -39,6 +44,18 @@ def role_name(control_type_name):
 
 def risky(name):
     return bool(name) and bool(RISKY.search(name))
+
+
+def is_chat(exe, title):
+    return bool(CHAT_APPS.search(f"{exe} {title}"))
+
+
+def route_line(target, fg):
+    """Receipt of where real input went: the target window vs the actual foreground window."""
+    f = lambda i: f'"{_clip(i["title"])}" hwnd={i["hwnd"]} exe={i["exe"]}' if i else "none"
+    same = target and fg and target["hwnd"] == fg["hwnd"]
+    warn = "" if same else "  <- MISMATCH: keys go to the foreground window, not the target"
+    return f"input: target {f(target)} | foreground {f(fg)}{warn}"
 
 
 def cap_lines(text, n=60):
@@ -348,6 +365,38 @@ class Desk:
         self._guard(w)
         return w
 
+    @staticmethod
+    def _info(w):
+        return {"title": w.Name or "", "hwnd": w.NativeWindowHandle, "exe": _exe(w.ProcessId)}
+
+    def target_info(self):
+        return self._info(self.win) if self._alive(self.win) else None
+
+    def foreground_info(self):
+        """Top-level window that has the keyboard focus right now (where keys really land)."""
+        h = _u32.GetAncestor(_u32.GetForegroundWindow(), 3)  # GA_ROOT: a dialog counts as its owner
+        if not h:
+            return None
+        buf, pid = ctypes.create_unicode_buffer(512), ctypes.c_ulong()
+        _u32.GetWindowTextW(h, buf, 512)
+        _u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        return {"title": buf.value, "hwnd": h, "exe": _exe(pid.value)}
+
+    def route_note(self, since):
+        """route_line, but only when this run injected real input (inputs.last >= since)."""
+        if inputs.last[0] < since:
+            return ""
+        return route_line(self.target_info(), self.foreground_info())
+
+    def _chat_guard(self, w=None):
+        """Enter in a chat app sends the message: needs run(..., confirm=True) after asking the user."""
+        if self.confirmed:
+            return
+        for i in (self.foreground_info(), self._info(w or self.resolve())):
+            if i and is_chat(i["exe"], i["title"]):
+                raise GuardBlocked(f"Enter would go to chat app {i['title']!r} ({i['exe']}): "
+                                   "ask the user, then run(..., confirm=True)")
+
     def windows(self):
         """Top-level windows: hwnd, title, exe, bounds, state."""
         fg, out = _u32.GetForegroundWindow(), []
@@ -539,7 +588,9 @@ class Desk:
         return self.auto.ControlFromHandle(rec["hwnd"])
 
     def _front(self, w=None):
-        """Keys go to the foreground window: bring the target there (keeps maximized state)."""
+        """Keys go to the foreground window: bring the target there (keeps maximized state).
+        When Windows' foreground lock refuses, the last resort minimizes then restores/maximizes
+        the window (it flickers); if that fails too, raises and sends no input."""
         w = w or self.resolve()
         h = w.NativeWindowHandle
         fg = _u32.GetForegroundWindow()
@@ -607,11 +658,15 @@ class Desk:
 
     def type(self, text, id=None, name=None, role=None, enter=False):
         """With a target: SetValue if settable (instant, background) else focus + keys.
-        Without: unicode keystrokes into the foreground target window."""
+        Without: unicode keystrokes into the foreground target window.
+        enter=True in a chat app (CHAT_APPS) needs confirm=True: Enter sends the message."""
         w = None
         if id is not None or name is not None:
             rec, _ = self._checked(self._id(id, name, role))
             w = self._top_of(rec)
+        if enter:
+            self._chat_guard(w)  # before anything is typed or set
+        if w is not None:
             if rec.get("settable"):
                 try:
                     self._ctl(rec).GetValuePattern().SetValue(text, waitTime=0)
@@ -631,7 +686,10 @@ class Desk:
             inputs.press("enter")
 
     def key(self, spec, times=1):
-        """Shortcut into the target window via scan codes: key('ctrl+s'), key('enter', times=3)."""
+        """Shortcut into the target window via scan codes: key('ctrl+s'), key('enter', times=3).
+        Enter / ctrl+enter in a chat app (CHAT_APPS) needs confirm=True: it sends the message."""
+        if isinstance(spec, str) and spec.lower().split("+")[-1] in ("enter", "return"):
+            self._chat_guard()
         self._front()
         inputs.press(spec, times)
 
@@ -651,8 +709,9 @@ class Desk:
             time.sleep(0.2)
         raise TimeoutError(f"{name!r} not found in {timeout}s")
 
-    def focus(self, target):
-        w = self.resolve(target)
+    def focus(self, target=None, hwnd=None, title=None):
+        """Bring a window to front and target it: focus(hwnd=...), focus(title=...) or positional."""
+        w = self.resolve(hwnd if hwnd is not None else title if title is not None else target)
         self._front(w)
         self.win = w
         return w.Name
@@ -673,13 +732,14 @@ class Desk:
             if new:
                 w = new[0]
                 self._guard(w)
+                note = ""
                 try:
                     self._front(w)
-                except Exception:
-                    pass
+                except Exception as e:  # keep going (the window exists) but say it is not in front
+                    note = f" (not brought to front: {e})"
                 self.win = w
                 self.before = set(self._wins())
-                return w.Name
+                return w.Name + note
         raise TimeoutError(f"no new window after launching {cmd!r}")
 
     def wait_window(self, title=None, exe=None, timeout=30.0):
