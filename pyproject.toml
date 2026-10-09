@@ -1,9 +1,18 @@
 [project]
 name = "winhands"
-version = "0.2.0"
+version = "0.3.0"
 description = "Computer use MCP server for Windows: a11y tree + pixels, code mode, game-grade input"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{ name = "Rodolfo Obreque" }]
+keywords = ["mcp", "mcp-server", "computer-use", "windows", "uiautomation", "claude", "claude-code", "ai-agents"]
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "mcp>=2.2",
     "uiautomation>=2.0.29",
@@ -20,6 +29,11 @@ dependencies = [
     "winrt-Windows.Foundation.Collections",
     "winrt-Windows.Globalization",
 ]
+
+[project.urls]
+Homepage = "https://github.com/zredo19/winhands"
+Repository = "https://github.com/zredo19/winhands"
+Issues = "https://github.com/zredo19/winhands/issues"
 
 [project.scripts]
 winhands = "server:main"

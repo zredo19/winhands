@@ -3,6 +3,33 @@
 Computer use for Windows: a small MCP server that lets Claude (or any MCP client)
 operate any desktop app, draw in canvases and drive games.
 
+## Install
+
+Open PowerShell and run:
+
+```powershell
+irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1 | iex
+```
+
+It installs [uv](https://docs.astral.sh/uv/) if missing (uv brings its own Python, so you need none),
+installs winhands as a uv tool, registers the MCP server in Claude Code (user scope) and copies the skill to
+`~/.claude/skills/winhands`. No admin rights. Then restart Claude Code and ask it: "open Notepad and type hello".
+
+Requirements: Windows 10 2004+ or 11, and Claude Code or any MCP client (the installer prints the config snippet when
+`claude` is not found). To update, run the same command again. To uninstall:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1))) -Uninstall
+```
+
+Prefer to do it by hand? See [Manual install](#manual-install).
+
+![The takeover overlay: edge glow, status banner and agent cursor](docs/img/overlay-states.png)
+*The overlay while Claude controls the PC: edge glow and status banner in four states (acting, thinking, paused, stopped).*
+
+![Agent cursor at 2x in the three palettes](docs/img/overlay-cursor.png)
+*The agent cursor at 2x: idle, moving (trail) and click (ripple), in the Claude, Antigravity and Codex palettes.*
+
 Its design follows the computer-use harness of OpenAI's GPT-6 Astra in the Codex/ChatGPT desktop app,
 and goes past it where that harness is weak (no key holds, no raw mouse, no local control loops):
 
@@ -14,8 +41,9 @@ and goes past it where that harness is weak (no key holds, no raw mouse, no loca
 3. **Built-in validation.** Every `run` returns a UI diff (or the full tree of a new dialog).
 4. **Fail closed.** Element ids are bound to the latest snapshot; changed or vanished targets raise
    `StaleTarget` instead of clicking the wrong thing.
-5. **Takeover UX and safety.** An orange glow border and banner on the controlled monitor while acting, plus an orange-edged
-   cursor where real input lands, all excluded from screenshots.
+5. **Takeover UX and safety.** An animated edge glow and status banner (acting, thinking, stopped; with the Ctrl+Alt+Q hint)
+   on the controlled monitor, plus an agent cursor with a motion trail and click ripple where real input lands, all in the
+   client's colour and excluded from screenshots.
    Ctrl+LeftAlt+Q kill switch, and an automatic abort when the user touches mouse or keyboard.
    Held inputs are released on abort, risky actions need confirmation, and some windows are denylisted.
 6. **Memory.** Per-app notes and reusable skills (Voyager-style) that persist across sessions.
@@ -65,12 +93,12 @@ Notes on method:
   calculator result needs a screenshot. Its failed rep missed the calculator in that snapshot.
 - Windows-MCP dropped rapid consecutive clicks. A 1 s pause between its clicks, not counted, mimics agent pacing.
 
-## Install
+## Manual install
 
 Windows 10 2004+ / 11, Python 3.11+. With [uv](https://docs.astral.sh/uv/):
 
 ```powershell
-uv tool install git+https://github.com/zredo19/winhands
+uv tool install --compile-bytecode git+https://github.com/zredo19/winhands
 claude mcp add winhands --scope user -- winhands
 ```
 
