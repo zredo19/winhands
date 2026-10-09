@@ -43,6 +43,15 @@ To uninstall with it:
 
 Prefer to do it by hand from the repo? See [Manual install](#manual-install).
 
+**"An Application Control policy has blocked this file"** (Spanish Windows: *"Una directiva de Control de aplicaciones bloqueó este archivo"*)
+when running `winhands` or `winhands setup`: Windows App Control / Smart App Control blocks unsigned `.exe` launchers such as
+`winhands.exe`. winhands registers `python -m winhands`, so it never needs that `.exe`; run setup through the tool's Python instead
+(add `--remove` to undo it, `--version` to check that Python itself runs):
+
+```powershell
+& (Join-Path (uv tool dir) 'winhands\Scripts\python.exe') -m winhands setup
+```
+
 ![The takeover overlay: edge glow, status banner and agent cursor](docs/img/overlay-states.png)
 *The overlay while Claude controls the PC: edge glow and status banner in four states (acting, thinking, paused, stopped).*
 

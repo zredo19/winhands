@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "winhands"
-version = "0.3.0"
+version = "0.3.1"
 description = "Computer use MCP server for Windows: a11y tree + pixels, code mode, game-grade input"
 readme = "README.md"
 requires-python = ">=3.11"
