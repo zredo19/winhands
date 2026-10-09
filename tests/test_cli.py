@@ -5,7 +5,8 @@ import pytest
 
 from winhands import cli
 
-EXE = r"C:\x\Scripts\winhands.exe"
+PY = r"C:\x\Scripts\python.exe"
+CMD = [PY, "-m", "winhands"]            # what setup registers: never the unsigned winhands.exe launcher
 CLAUDE = r"C:\bin\claude.cmd"
 
 
@@ -31,7 +32,7 @@ def no_real_warm_up(monkeypatch):
 
 def test_setup_warms_up_the_install_so_the_first_mcp_start_is_fast(tmp_path):
     calls = []
-    cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=Run(), command=[EXE], out=lambda s: None,
+    cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=Run(), command=CMD, out=lambda s: None,
               warm=lambda: calls.append(1))
     assert calls == [1]
 
@@ -40,14 +41,14 @@ def test_warm_up_is_skipped_for_dry_run_and_remove(tmp_path):
     def boom():
         pytest.fail("warmed up")
     for kw in ({"dry_run": True}, {"remove": True}):
-        assert cli.setup(home=tmp_path, which=_which(), run=Run(), command=[EXE], out=lambda s: None, warm=boom, **kw) == 0
+        assert cli.setup(home=tmp_path, which=_which(), run=Run(), command=CMD, out=lambda s: None, warm=boom, **kw) == 0
 
 
 def test_a_failing_warm_up_never_fails_setup(tmp_path):
     def boom():
         raise RuntimeError("no display")
     out = []
-    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=Run(), command=[EXE], out=out.append, warm=boom) == 0
+    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=Run(), command=CMD, out=out.append, warm=boom) == 0
     assert any("Warm-up skipped" in line and "no display" in line for line in out)
 
 
@@ -88,9 +89,9 @@ def test_skill_text_is_the_packaged_skill():
 
 def test_setup_registers_mcp_and_installs_skill(tmp_path):
     run, out = Run(), []
-    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=[EXE], out=out.append) == 0
+    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=CMD, out=out.append) == 0
     assert run.calls == [[CLAUDE, "mcp", "remove", "winhands", "--scope", "user"],
-                         [CLAUDE, "mcp", "add", "winhands", "--scope", "user", "--", EXE]]
+                         [CLAUDE, "mcp", "add", "winhands", "--scope", "user", "--", PY, "-m", "winhands"]]
     skill = tmp_path / ".claude" / "skills" / "winhands" / "SKILL.md"
     assert skill.read_text(encoding="utf-8") == cli.skill_text()
     assert any("Restart Claude Code" in line for line in out)
@@ -98,38 +99,31 @@ def test_setup_registers_mcp_and_installs_skill(tmp_path):
 
 def test_setup_is_idempotent_when_remove_fails(tmp_path):
     run = Run(1, 0)                                    # the entry did not exist yet: remove fails, add works
-    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=[EXE], out=lambda s: None) == 0
+    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=CMD, out=lambda s: None) == 0
     assert len(run.calls) == 2
 
 
 def test_setup_reports_a_failed_add(tmp_path):
     out = []
     run = Run(0, 3)
-    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=[EXE], out=out.append) == 1
+    assert cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=run, command=CMD, out=out.append) == 1
     assert any("claude mcp add" in line for line in out)
 
 
 def test_setup_without_claude_prints_the_json_snippet(tmp_path):
     out = []
     run = Run()
-    assert cli.setup(home=tmp_path, which=_which(), run=run, command=[EXE], out=out.append) == 0
+    assert cli.setup(home=tmp_path, which=_which(), run=run, command=CMD, out=out.append) == 0
     assert run.calls == []
     blob = next(line for line in out if line.lstrip().startswith("{"))
-    assert json.loads(blob) == {"mcpServers": {"winhands": {"command": EXE}}}
+    assert json.loads(blob) == {"mcpServers": {"winhands": {"command": PY, "args": ["-m", "winhands"]}}}
     assert (tmp_path / ".claude" / "skills" / "winhands" / "SKILL.md").is_file()
-
-
-def test_snippet_carries_args_for_the_python_dash_m_fallback(tmp_path):
-    out = []
-    cli.setup(home=tmp_path, which=_which(), run=Run(), command=[r"C:\py\python.exe", "-m", "winhands"], out=out.append)
-    blob = next(line for line in out if line.lstrip().startswith("{"))
-    assert json.loads(blob)["mcpServers"]["winhands"] == {"command": r"C:\py\python.exe", "args": ["-m", "winhands"]}
 
 
 def test_setup_dry_run_changes_nothing(tmp_path):
     out = []
     assert cli.setup(dry_run=True, home=tmp_path, which=_which(claude=CLAUDE),
-                     run=lambda *a, **k: pytest.fail("ran a command"), command=[EXE], out=out.append) == 0
+                     run=lambda *a, **k: pytest.fail("ran a command"), command=CMD, out=out.append) == 0
     assert list(tmp_path.iterdir()) == []
     assert any("dry run" in line.lower() for line in out)
 
@@ -139,14 +133,14 @@ def test_remove_unregisters_and_deletes_the_skill(tmp_path):
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text("x", encoding="utf-8")
     run = Run()
-    assert cli.setup(remove=True, home=tmp_path, which=_which(claude=CLAUDE), run=run, command=[EXE],
+    assert cli.setup(remove=True, home=tmp_path, which=_which(claude=CLAUDE), run=run, command=CMD,
                      out=lambda s: None) == 0
     assert run.calls == [[CLAUDE, "mcp", "remove", "winhands", "--scope", "user"]]
     assert not d.exists()
 
 
 def test_remove_is_fine_with_nothing_installed_and_no_claude(tmp_path):
-    assert cli.setup(remove=True, home=tmp_path, which=_which(), run=Run(), command=[EXE], out=lambda s: None) == 0
+    assert cli.setup(remove=True, home=tmp_path, which=_which(), run=Run(), command=CMD, out=lambda s: None) == 0
 
 
 def test_main_passes_setup_flags_through(monkeypatch):
@@ -164,18 +158,40 @@ def test_unknown_command_is_an_argparse_error():
     assert e.value.code == 2
 
 
-def test_command_is_the_running_executable_when_it_is_winhands():
-    got = cli.command_for(argv0=EXE, which=_which(winhands=r"C:\other\winhands.exe"),
-                          executable=r"C:\py\python.exe", isfile=lambda p: True)
-    assert got == [EXE]
+def test_command_is_the_interpreter_dash_m_never_the_launcher_exe():
+    # Windows App Control / Smart App Control can block the unsigned winhands.exe launcher, so the registered
+    # command must not depend on it, whichever way setup was started.
+    assert cli.command_for(executable=PY) == CMD
+    assert cli.command_for() == [sys.executable, "-m", "winhands"]
+    assert not any(pathlib.PureWindowsPath(p).name.lower() == "winhands.exe" for p in cli.command_for())
 
 
-def test_command_falls_back_to_path_then_scripts_dir_then_python_dash_m():
-    py = r"C:\py\python.exe"
-    other = r"C:\other\winhands.exe"
-    # `python -m winhands`: argv0 is the package's __main__.py, not the executable
-    assert cli.command_for(argv0=r"C:\p\winhands\__main__.py", which=_which(winhands=other),
-                           executable=py, isfile=lambda p: True) == [other]
-    scripts = str(pathlib.Path(py).parent / "winhands.exe")
-    assert cli.command_for(argv0="x", which=_which(), executable=py, isfile=lambda p: p == scripts) == [scripts]
-    assert cli.command_for(argv0="x", which=_which(), executable=py, isfile=lambda p: False) == [py, "-m", "winhands"]
+TOOL_PY = r"C:\Users\u\AppData\Roaming\uv\tools\winhands\Scripts\python.exe"
+UVX_PY = r"C:\Users\u\AppData\Local\uv\cache\environments-v2\winhands-3f9a\Scripts\python.exe"
+
+
+@pytest.mark.parametrize("path, ephemeral", [
+    (TOOL_PY, False),                                                                          # uv tool install: stable
+    (r"C:\Users\u\.winhands\venv\Scripts\python.exe", False),                                  # a plain venv
+    (r"C:\Python312\python.exe", False),
+    (UVX_PY, True),                                                                            # uvx
+    (r"C:\Users\u\AppData\Local\uv\cache\archive-v0\abc\Scripts\python.exe", True),
+    (r"C:\Users\u\AppData\Local\uv\cache\builds-v0\.tmpX\Scripts\python.exe", True),
+    (r"C:\work\archive-v1\venv\Scripts\python.exe", False),                                    # not under a cache dir
+])
+def test_ephemeral_uv_environments_are_detected(path, ephemeral):
+    assert cli.is_ephemeral(path) is ephemeral
+
+
+def test_setup_refuses_to_register_a_throwaway_uvx_environment(tmp_path):
+    out = []
+    code = cli.setup(home=tmp_path, which=_which(claude=CLAUDE), run=lambda *a, **k: pytest.fail("ran a command"),
+                     command=[UVX_PY, "-m", "winhands"], out=out.append)
+    assert code == 1
+    assert any("uv tool install winhands" in line for line in out)
+    assert list(tmp_path.iterdir()) == []                       # nothing was installed either
+
+
+def test_remove_works_even_from_a_throwaway_environment(tmp_path):
+    assert cli.setup(remove=True, home=tmp_path, which=_which(), run=Run(), command=[UVX_PY, "-m", "winhands"],
+                     out=lambda s: None) == 0

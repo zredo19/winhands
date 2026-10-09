@@ -3,7 +3,7 @@
 No arguments: run the MCP stdio server (what MCP clients launch; argparse is never touched on that path).
 `winhands setup` registers the server with Claude Code and installs the skill; `winhands --version`.
 """
-import json, os, pathlib, shutil, subprocess, sys
+import json, pathlib, shutil, subprocess, sys
 from importlib import resources
 
 from . import __version__
@@ -11,17 +11,16 @@ from . import __version__
 SKILL_PARTS = (".claude", "skills", "winhands")
 
 
-def command_for(argv0=None, which=shutil.which, executable=None, isfile=os.path.isfile):
-    """argv that launches this winhands: the running executable, else PATH, else Scripts dir, else python -m."""
-    me = os.path.abspath(sys.argv[0] if argv0 is None else argv0)
-    if pathlib.Path(me).stem.lower() == "winhands" and isfile(me):
-        return [me]
-    if found := which("winhands"):
-        return [found]
-    scripts = str(pathlib.Path(executable or sys.executable).parent / "winhands.exe")
-    if isfile(scripts):
-        return [scripts]
+def command_for(executable=None):
+    """argv that launches this winhands: `<python> -m winhands`. Never the winhands.exe launcher: it is unsigned and
+    Windows App Control / Smart App Control can block it (one friend's PC did), while the interpreter keeps working."""
     return [executable or sys.executable, "-m", "winhands"]
+
+
+def is_ephemeral(executable):
+    """True for a throwaway uv environment (uvx, uv run --with): its path disappears when uv cleans its cache."""
+    parts = [p.lower() for p in pathlib.PureWindowsPath(executable).parts]
+    return "cache" in parts and any(p.startswith(("environments-v", "archive-v", "builds-v")) for p in parts)
 
 
 def skill_text():
@@ -39,6 +38,10 @@ def setup(remove=False, dry_run=False, home=None, which=shutil.which, run=subpro
     """Register (or with remove=True unregister) the MCP server in Claude Code and the skill folder. Returns an exit code."""
     skill = pathlib.Path(home or pathlib.Path.home()).joinpath(*SKILL_PARTS)
     command = command or command_for()
+    if not remove and is_ephemeral(command[0]):
+        out("winhands is running from a temporary uvx environment, so there is no stable command to register.\n"
+            "Run `uv tool install winhands` first, then `winhands setup`.")
+        return 1
     claude = which("claude")
     tag = "(dry run) " if dry_run else ""
 
