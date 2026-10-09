@@ -19,8 +19,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-# PyPI is not live yet: after the first release change this default to 'winhands'.
-$Spec = if ($env:WINHANDS_SPEC) { $env:WINHANDS_SPEC } else { 'git+https://github.com/zredo19/winhands' }
+# Package source: PyPI. Override with WINHANDS_SPEC (e.g. git+https://github.com/zredo19/winhands to try unreleased code).
+$Spec = if ($env:WINHANDS_SPEC) { $env:WINHANDS_SPEC } else { 'winhands' }
 
 function Say($msg) { Write-Host "[winhands] $msg" -ForegroundColor Cyan }
 
