@@ -52,8 +52,8 @@ function Install-Winhands {
         if ($LASTEXITCODE) { throw "uv exited with code $LASTEXITCODE" }
     }
 
-    $bin = if (Get-Uv) { (uv tool dir --bin | Out-String).Trim() } else { '<uv tool bin dir>' }
-    $exe = Join-Path $bin 'winhands.exe'
+    $bin = if (Get-Uv) { (uv tool dir --bin | Out-String).Trim() } else { 'UV_TOOL_BIN_DIR' }  # placeholder: only reachable in -DryRun before uv exists
+    $exe = "$bin\winhands.exe"  # not Join-Path: it rejects the placeholder on Windows PowerShell 5.1
 
     # Persistent PATH only matters for the `winhands` command in new shells; the MCP entry below uses the full path.
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
