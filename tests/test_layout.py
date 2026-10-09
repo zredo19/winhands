@@ -17,7 +17,7 @@ def test_there_is_one_skill_file_and_it_ships_with_the_package():
 
 def test_pyproject_ships_the_package_and_points_the_script_at_the_cli():
     p = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert p["project"]["scripts"] == {"winhands": "winhands.server:main"}
+    assert p["project"]["scripts"] == {"winhands": "winhands.cli:main"}
     st = p["tool"]["setuptools"]
     assert st["packages"] == ["winhands"] and "py-modules" not in st
     assert "SKILL.md" in st["package-data"]["winhands"]

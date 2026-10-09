@@ -40,7 +40,7 @@ Repository = "https://github.com/zredo19/winhands"
 Issues = "https://github.com/zredo19/winhands/issues"
 
 [project.scripts]
-winhands = "winhands.server:main"
+winhands = "winhands.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]
