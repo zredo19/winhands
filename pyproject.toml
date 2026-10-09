@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]  # PEP 639: license = "MIT" as an SPDX string
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "winhands"
 version = "0.3.0"
@@ -36,10 +40,13 @@ Repository = "https://github.com/zredo19/winhands"
 Issues = "https://github.com/zredo19/winhands/issues"
 
 [project.scripts]
-winhands = "server:main"
+winhands = "winhands.server:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]
 
 [tool.setuptools]
-py-modules = ["server", "uia", "inputs", "vision", "memory", "overlay"]
+packages = ["winhands"]
+
+[tool.setuptools.package-data]
+winhands = ["SKILL.md"]

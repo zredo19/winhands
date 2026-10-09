@@ -1,8 +1,8 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import inputs
-from inputs import _norm, interpolate, scan_of, combo
+from winhands import inputs
+from winhands.inputs import _norm, interpolate, scan_of, combo
 
 
 def test_norm_hits_every_pixel():

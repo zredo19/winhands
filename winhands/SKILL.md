@@ -70,7 +70,7 @@ show()                                    # attach a screenshot to this result
 ## 5. Safety and gotchas
 - `sh()` and clicks on Send/Buy/Pay/Delete/Install/Allow-like elements need `run(..., confirm=True)`:
   ask the user first. Denylisted windows (password managers, banking) raise; do not work around it.
-- Enter in a chat app (`CHAT_APPS` in uia.py: Discord, WhatsApp incl. WhatsApp Web tabs, Telegram, Slack, Teams, Signal,
+- Enter in a chat app (`CHAT_APPS` in winhands/uia.py: Discord, WhatsApp incl. WhatsApp Web tabs, Telegram, Slack, Teams, Signal,
   Messenger; matched on exe or window title) sends the message: `type(..., enter=True)` and `key("enter"|"ctrl+enter")`
   raise `GuardBlocked` until you ask the user and rerun with `confirm=True`. Raw `press("enter")` is NOT guarded.
 - Keys go to the FOREGROUND window, not the target. A run that sent real input ends with

@@ -1,7 +1,7 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from uia import (role_name, prune, collapse_lists, Registry, render, diff, canvas_like,
+from winhands.uia import (role_name, prune, collapse_lists, Registry, render, diff, canvas_like,
                  stale_reason, risky, flatten)
 
 _rid = iter(range(1000, 10 ** 6))
@@ -165,14 +165,14 @@ def test_risky_names():
 
 
 def test_cap_lines_truncates_long_dumps():
-    from uia import cap_lines
+    from winhands.uia import cap_lines
     out = cap_lines("\n".join(str(i) for i in range(100)), 40).splitlines()
     assert len(out) == 41 and out[-1].startswith("... +60 lines")
     assert cap_lines("a\nb", 40) == "a\nb"
 
 
 def test_usable_window_skips_broken_and_shell_windows(monkeypatch):
-    import uia
+    from winhands import uia
 
     class Boom:
         NativeWindowHandle = 5
@@ -187,7 +187,7 @@ def test_usable_window_skips_broken_and_shell_windows(monkeypatch):
 
 
 def test_after_action_skips_tree_diff_on_canvas_windows(monkeypatch):
-    import uia
+    from winhands import uia
     d = object.__new__(uia.Desk)
 
     class Win:
@@ -202,7 +202,7 @@ def test_after_action_skips_tree_diff_on_canvas_windows(monkeypatch):
 
 
 def test_is_chat_matches_exe_or_window_title():
-    from uia import is_chat
+    from winhands.uia import is_chat
     assert is_chat("Discord.exe", "valorador | servidor - Discord")
     assert is_chat("chrome.exe", "(1) WhatsApp - Google Chrome")           # WhatsApp Web in a browser
     assert is_chat("ms-teams.exe", "") and is_chat("slack.exe", "") and is_chat("Signal.exe", "")
@@ -212,7 +212,7 @@ def test_is_chat_matches_exe_or_window_title():
 
 
 def test_route_line_flags_target_foreground_mismatch():
-    from uia import route_line
+    from winhands.uia import route_line
     t = {"title": "UAI Online", "hwnd": 1, "exe": "chrome.exe"}
     f = {"title": "Discord", "hwnd": 2, "exe": "Discord.exe"}
     assert "MISMATCH" in route_line(t, f) and "MISMATCH" in route_line(None, f)
@@ -221,7 +221,7 @@ def test_route_line_flags_target_foreground_mismatch():
 
 
 def test_route_note_only_after_real_input(monkeypatch):
-    import uia
+    from winhands import uia
     d = object.__new__(uia.Desk)
     info = {"title": "W", "hwnd": 1, "exe": "x.exe"}
     d.target_info, d.foreground_info = lambda: info, lambda: info
@@ -231,7 +231,7 @@ def test_route_note_only_after_real_input(monkeypatch):
 
 
 def _chat_desk(monkeypatch, exe, title, confirmed=False):
-    import uia
+    from winhands import uia
 
     class W:
         NativeWindowHandle, Name, ProcessId = 7, title, 1
@@ -248,7 +248,8 @@ def _chat_desk(monkeypatch, exe, title, confirmed=False):
 
 
 def test_enter_in_chat_app_needs_confirm(monkeypatch):
-    import pytest, uia
+    import pytest
+    from winhands import uia
     d, sent = _chat_desk(monkeypatch, "Discord.exe", "general - Discord")
     with pytest.raises(uia.GuardBlocked):
         d.type("hi", enter=True)
@@ -272,14 +273,15 @@ def test_enter_in_chat_app_allowed_when_confirmed_or_not_chat(monkeypatch):
 
 
 def test_enter_in_whatsapp_web_tab_needs_confirm(monkeypatch):
-    import pytest, uia
+    import pytest
+    from winhands import uia
     d, _ = _chat_desk(monkeypatch, "chrome.exe", "(1) WhatsApp - Google Chrome")
     with pytest.raises(uia.GuardBlocked):
         d.key("enter")
 
 
 def test_app_notes_when_window_could_not_be_brought_to_front(monkeypatch):
-    import uia
+    from winhands import uia
 
     class Win:
         NativeWindowHandle, Name, ProcessId = 9, "Paint", 1
@@ -301,7 +303,7 @@ def test_app_notes_when_window_could_not_be_brought_to_front(monkeypatch):
 
 
 def test_focus_accepts_hwnd_and_title_keywords():
-    import uia
+    from winhands import uia
     d, seen = object.__new__(uia.Desk), []
 
     class W:

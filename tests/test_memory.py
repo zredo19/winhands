@@ -2,7 +2,7 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import pytest
-import memory
+from winhands import memory
 
 
 def test_notes_append_read_and_search(tmp_path):

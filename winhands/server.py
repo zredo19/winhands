@@ -13,8 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 
 from mcp.server.mcpserver import Context, Image, MCPServer
 
-import inputs, memory, vision
-from uia import INTERACTIVE, Desk
+from . import inputs, memory, vision
+from .uia import INTERACTIVE, Desk
 
 LINGER = float(os.environ.get("WINHANDS_LINGER", "45"))  # s the border stays up between actions (thinking)
 SHARED = os.environ.get("WINHANDS_SHARED", "1") != "0"  # 0 = strict: any user input aborts a run
@@ -286,7 +286,7 @@ def _namespace(d):
 
 
 def _exe_of(d):
-    from uia import _exe
+    from .uia import _exe
     return _exe(d.resolve().ProcessId)
 
 
@@ -371,7 +371,7 @@ def _tint(ctx):
     ov = state["overlay"]
     if ov:
         try:
-            from overlay import provider_for
+            from .overlay import provider_for
             ov.set_provider(provider_for(ctx.session.client_params.client_info.name))
         except Exception:
             pass  # cosmetic only
@@ -500,7 +500,7 @@ def run(code: str, timeout: int = 30, confirm: bool = False, ctx: Context | None
 
 def main():
     if os.environ.get("WINHANDS_OVERLAY", "1") != "0":
-        from overlay import Overlay
+        from .overlay import Overlay
         ov = Overlay()
         if ov.ready.wait(5) and ov.hwnd:
             state["overlay"] = ov

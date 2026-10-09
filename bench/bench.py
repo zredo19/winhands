@@ -13,7 +13,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WINHANDS = StdioServerParameters(command=sys.executable, args=[os.path.join(HERE, "..", "server.py")])
+WINHANDS = StdioServerParameters(command=sys.executable, args=["-m", "winhands"])
 OUT = tempfile.gettempdir()
 
 

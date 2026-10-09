@@ -1,7 +1,7 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import server
+from winhands import server
 
 
 def test_run_observe_prints_and_returns_text():
@@ -23,7 +23,7 @@ def test_echo_last_skips_values_already_printed():
 
 
 def test_show_accepts_region_keyword(monkeypatch):
-    import uia, vision, memory
+    from winhands import uia, vision, memory
     monkeypatch.setattr(memory, "load_skills", lambda ns: [])
     monkeypatch.setattr(vision, "pending", [])
     calls = []

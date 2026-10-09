@@ -3,7 +3,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import numpy as np
 from PIL import Image
-from vision import (tokens, fit, Shot, montage_layout, montage, changed, color_blobs,
+from winhands.vision import (tokens, fit, Shot, montage_layout, montage, changed, color_blobs,
                     format_ocr, grid, marks)
 
 
@@ -70,7 +70,7 @@ def test_grid_and_marks_render_without_error():
 
 
 def test_region_capture_crops_covered_target_window(monkeypatch):
-    import vision
+    from winhands import vision
     win = Image.new("RGB", (200, 200), (255, 0, 0))
     monkeypatch.setattr(vision, "cover", lambda region: 123)
     monkeypatch.setattr(vision, "grab_window", lambda h: (win, (100, 100, 300, 300)))
@@ -80,14 +80,14 @@ def test_region_capture_crops_covered_target_window(monkeypatch):
 
 
 def test_region_capture_uses_screen_when_target_is_visible(monkeypatch):
-    import vision
+    from winhands import vision
     monkeypatch.setattr(vision, "cover", lambda region: None)
     monkeypatch.setattr(vision, "_screen", lambda region: Image.new("RGB", (5, 5), (0, 0, 255)))
     assert vision.grab_img((0, 0, 5, 5)).getpixel((2, 2)) == (0, 0, 255)
 
 
 def test_pixel_font_prep_keeps_hard_edges():
-    import vision
+    from winhands import vision
     img = Image.new("L", (2, 1))
     img.putpixel((1, 0), 255)
     big = vision.prep_ocr(img, 3, pixel=True)

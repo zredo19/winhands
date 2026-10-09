@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-import overlay
+from winhands import overlay
 
 DARK, LIGHT = (24, 25, 33), (232, 234, 245)
 

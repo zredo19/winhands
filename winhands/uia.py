@@ -7,7 +7,7 @@ live element and fails closed (StaleTarget) if it vanished or changed.
 """
 import ctypes, os, re, subprocess, time
 
-import inputs
+from . import inputs
 
 MAX_NAME = 60
 INTERACTIVE = {"button", "check box", "combo box", "edit", "hyperlink", "list item", "menu item",
