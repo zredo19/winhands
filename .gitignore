@@ -5,3 +5,5 @@ __pycache__/
 *.egg-info/
 .codegraph/
 overlay_preview/
+build/
+dist/

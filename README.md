@@ -1,28 +1,47 @@
 # winhands
 
+[![CI](https://github.com/zredo19/winhands/actions/workflows/ci.yml/badge.svg)](https://github.com/zredo19/winhands/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/winhands.svg)](https://pypi.org/project/winhands/)
+
 Computer use for Windows: a small MCP server that lets Claude (or any MCP client)
 operate any desktop app, draw in canvases and drive games.
 
 ## Install
 
-Open PowerShell and run:
+Windows 10 2004+ or 11, and Claude Code or any MCP client. In PowerShell:
+
+```powershell
+winget install astral-sh.uv    # once; installs uv, which brings its own Python (check the id with: winget search uv)
+uv tool install winhands
+winhands setup
+```
+
+`winhands setup` registers the MCP server in Claude Code (user scope) and installs the skill into
+`~/.claude/skills/winhands`. If `claude` is not on your PATH it prints the config snippet for other MCP clients instead.
+Then restart Claude Code and ask it: "open Notepad and type hello".
+
+Already have Python 3.11+? `pip install winhands`, then `winhands setup`.
+
+- Update: `uv tool upgrade winhands`
+- Uninstall: `winhands setup --remove`, then `uv tool uninstall winhands`
+- See what `setup` would do without changing anything: `winhands setup --dry-run`
+
+### Alternative: one-line installer
+
+Installs uv if missing, then does the same as the commands above. You can read the
+[script](install.ps1) first; it needs no admin rights.
 
 ```powershell
 irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1 | iex
 ```
 
-It installs [uv](https://docs.astral.sh/uv/) if missing (uv brings its own Python, so you need none),
-installs winhands as a uv tool, registers the MCP server in Claude Code (user scope) and copies the skill to
-`~/.claude/skills/winhands`. No admin rights. Then restart Claude Code and ask it: "open Notepad and type hello".
-
-Requirements: Windows 10 2004+ or 11, and Claude Code or any MCP client (the installer prints the config snippet when
-`claude` is not found). To update, run the same command again. To uninstall:
+To uninstall with it:
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1))) -Uninstall
 ```
 
-Prefer to do it by hand? See [Manual install](#manual-install).
+Prefer to do it by hand from the repo? See [Manual install](#manual-install).
 
 ![The takeover overlay: edge glow, status banner and agent cursor](docs/img/overlay-states.png)
 *The overlay while Claude controls the PC: edge glow and status banner in four states (acting, thinking, paused, stopped).*
@@ -95,23 +114,20 @@ Notes on method:
 
 ## Manual install
 
-Windows 10 2004+ / 11, Python 3.11+. With [uv](https://docs.astral.sh/uv/):
+Windows 10 2004+ / 11, Python 3.11+. To run the development version from GitHub with [uv](https://docs.astral.sh/uv/):
 
 ```powershell
 uv tool install --compile-bytecode git+https://github.com/zredo19/winhands
-claude mcp add winhands --scope user -- winhands
+winhands setup
 ```
 
-Then give Claude the protocol (perceive → batch → validate, game guidance, safety rules):
-
-```powershell
-New-Item -ItemType Directory -Force ~/.claude/skills/winhands | Out-Null
-irm https://raw.githubusercontent.com/zredo19/winhands/main/SKILL.md -OutFile ~/.claude/skills/winhands/SKILL.md
-```
+`winhands setup` registers the MCP server and installs the skill (perceive → batch → validate, game guidance, safety
+rules). To do those two steps yourself: `claude mcp add winhands --scope user -- winhands`, and copy
+[`winhands/SKILL.md`](winhands/SKILL.md) to `~/.claude/skills/winhands/SKILL.md`.
 
 Any MCP client works: the server command is just `winhands` (stdio). Set `WINHANDS_OVERLAY=0` to hide the
-orange overlay, `WINHANDS_LINGER=45` for how long it stays up between actions and `WINHANDS_SHARED=0` for strict mode. From source: `pip install -e .` in a venv, then
-point the client at `python server.py`.
+overlay, `WINHANDS_LINGER=45` for how long it stays up between actions and `WINHANDS_SHARED=0` for strict mode. From source:
+`pip install -e .` in a venv, then point the client at `python -m winhands`.
 
 ## Safety
 

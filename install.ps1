@@ -8,8 +8,10 @@ winhands installer for Windows 10 2004+/11. No admin rights needed.
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1))) -Uninstall
   or download this file and run:  .\install.ps1 -Uninstall
 
+  It installs uv if missing, installs winhands as a uv tool and runs `winhands setup`
+  (registers the MCP server in Claude Code and installs the skill).
   -DryRun prints what would run without changing anything.
-  WINHANDS_SPEC / WINHANDS_RAW override the package source and the raw-file base URL (testing).
+  WINHANDS_SPEC overrides the package source (testing).
 #>
 param([switch]$Uninstall, [switch]$DryRun)
 
@@ -17,9 +19,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
+# PyPI is not live yet: after the first release change this default to 'winhands'.
 $Spec = if ($env:WINHANDS_SPEC) { $env:WINHANDS_SPEC } else { 'git+https://github.com/zredo19/winhands' }
-$Raw = if ($env:WINHANDS_RAW) { $env:WINHANDS_RAW } else { 'https://raw.githubusercontent.com/zredo19/winhands/main' }
-$SkillDir = Join-Path $HOME '.claude\skills\winhands'
 
 function Say($msg) { Write-Host "[winhands] $msg" -ForegroundColor Cyan }
 
@@ -39,6 +40,12 @@ function Get-Uv {
     Get-Command uv -ErrorAction SilentlyContinue
 }
 
+# Full path of the installed executable. The placeholder is only reachable in -DryRun before uv exists.
+function Get-Exe {
+    $bin = if (Get-Uv) { (uv tool dir --bin | Out-String).Trim() } else { 'UV_TOOL_BIN_DIR' }
+    "$bin\winhands.exe"
+}
+
 function Install-Winhands {
     if (-not (Get-Uv)) {
         Step 'install uv (Python package manager)' { Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression }
@@ -52,51 +59,33 @@ function Install-Winhands {
         if ($LASTEXITCODE) { throw "uv exited with code $LASTEXITCODE" }
     }
 
-    $bin = if (Get-Uv) { (uv tool dir --bin | Out-String).Trim() } else { 'UV_TOOL_BIN_DIR' }  # placeholder: only reachable in -DryRun before uv exists
-    $exe = "$bin\winhands.exe"  # not Join-Path: it rejects the placeholder on Windows PowerShell 5.1
-
-    # Persistent PATH only matters for the `winhands` command in new shells; the MCP entry below uses the full path.
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $exe = Get-Exe
+    $bin = Split-Path $exe
+    # Persistent PATH only matters for the `winhands` command in new shells; setup registers the full path.
     $newTerminal = $false
-    if (-not $DryRun -and (($userPath -split ';') -notcontains $bin)) {
+    if (-not $DryRun -and (([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -notcontains $bin)) {
         Step 'add the uv tool folder to your PATH' { uv tool update-shell; if ($LASTEXITCODE) { throw "uv exited with code $LASTEXITCODE" } }
         $newTerminal = $true
     }
     Add-Path $bin
 
-    if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Step 'register the MCP server in Claude Code (user scope)' {
-            try { claude mcp remove winhands --scope user 2>$null | Out-Null } catch { }  # re-run = refresh the path
-            claude mcp add winhands --scope user -- $exe
-            if ($LASTEXITCODE) { throw "claude exited with code $LASTEXITCODE" }
-        }
-    }
-    else {
-        Say 'Claude Code CLI not found. For other MCP clients add this server to their config:'
-        @{ mcpServers = @{ winhands = @{ command = $exe } } } | ConvertTo-Json -Depth 4
-    }
-
-    Step "install the Claude skill into $SkillDir" {
-        New-Item -ItemType Directory -Force $SkillDir | Out-Null
-        Invoke-WebRequest "$Raw/SKILL.md" -OutFile (Join-Path $SkillDir 'SKILL.md') -UseBasicParsing
+    Step 'register winhands with Claude Code and install the skill (winhands setup)' {
+        & $exe setup
+        if ($LASTEXITCODE) { throw "winhands setup exited with code $LASTEXITCODE" }
     }
 
     if ($DryRun) { Say 'Dry run finished. Nothing was changed.'; return }
-    Say 'Done. Installed: winhands (uv tool), its MCP entry, and the skill.'
-    Say 'Restart Claude Code, then ask it: "open Notepad and type hello".'
+    Say 'Done. Restart Claude Code, then ask it: "open Notepad and type hello".'
     if ($newTerminal) { Say 'Open a new terminal if you want to run the `winhands` command yourself (PATH changed).' }
 }
 
 function Uninstall-Winhands {
-    if (Get-Uv) {
-        Step 'uninstall winhands' { uv tool uninstall winhands; if ($LASTEXITCODE) { Say 'winhands was not installed as a uv tool.' } }
+    if (-not (Get-Uv)) { Say 'uv is not installed, so winhands was not installed as a uv tool.'; return }
+    $exe = Get-Exe
+    if ($DryRun -or (Test-Path $exe)) {
+        Step 'remove the MCP entry and the skill (winhands setup --remove)' { & $exe setup --remove }
     }
-    if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Step 'remove the MCP entry from Claude Code' {
-            try { claude mcp remove winhands --scope user 2>$null | Out-Null } catch { }
-        }
-    }
-    Step "remove the skill folder $SkillDir" { Remove-Item $SkillDir -Recurse -Force -ErrorAction SilentlyContinue }
+    Step 'uninstall winhands' { uv tool uninstall winhands; if ($LASTEXITCODE) { Say 'winhands was not installed as a uv tool.' } }
     if ($DryRun) { Say 'Dry run finished. Nothing was changed.'; return }
     Say 'Removed. uv itself was left installed. Your winhands notes (if any) were not touched.'
 }
