@@ -29,3 +29,39 @@ def test_user_line_is_one_stream_json_message():
 def test_spoken_strips_markdown_for_text_to_speech():
     assert spoken("**Listo**, abrí `notepad.exe`.\n- uno\n- dos") == "Listo, abrí notepad.exe. uno. dos"
     assert spoken("Mira [la página](https://x.cl) 😀") == "Mira la página"
+
+
+class _Proc:
+    def __init__(self, lines=()):
+        import io
+        self.stdin, self.stdout, self.returncode = io.StringIO(), iter(lines), 0
+
+    def poll(self):
+        return None
+
+
+def test_interrupt_sends_a_control_request_and_the_turn_ends_as_cancelled():
+    import json
+    from winhands.exo.brain import Brain
+    seen = []
+    b = Brain(lambda k, p: seen.append((k, p)))
+    b.proc, b.busy = _Proc(), True
+    b.interrupt()
+    msg = json.loads(b.proc.stdin.getvalue())
+    assert msg["type"] == "control_request" and msg["request"] == {"subtype": "interrupt"}
+    b._handle({"type": "result", "subtype": "error_during_execution", "is_error": True, "session_id": "s1"})
+    assert seen[-1] == ("done", {"ok": False, "text": "", "session": "s1", "cancelled": True}) and not b.busy
+    b.busy = True                                                     # the next turn is a normal one again
+    b._handle({"type": "result", "subtype": "success", "is_error": False, "result": "Listo.", "session_id": "s1"})
+    assert seen[-1] == ("done", {"ok": True, "text": "Listo.", "session": "s1"})
+
+
+def test_a_replaced_process_never_reports_a_lost_connection():
+    import json
+    from winhands.exo.brain import Brain
+    seen = []
+    b = Brain(lambda k, p: seen.append((k, p)))
+    old = _Proc([json.dumps({"type": "result", "subtype": "success", "result": "late", "session_id": "s"}) + "\n"])
+    b.proc, b.busy = _Proc(), True                                    # old was killed and replaced
+    b._read(old)
+    assert seen == [] and b.busy

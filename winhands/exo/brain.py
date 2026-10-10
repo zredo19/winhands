@@ -3,14 +3,15 @@
 It runs the user's own, unmodified Claude Code with their own login: Exo never sees credentials.
 Keeping the process alive makes every turn after the first one start in ~2 s instead of ~8 s.
 """
-import json, os, pathlib, re, shutil, subprocess, sys, threading
+import json, os, pathlib, re, shutil, subprocess, sys, threading, time
 from importlib import resources
 
 HOME = pathlib.Path(os.environ.get("EXO_HOME", pathlib.Path.home() / ".exo"))
 
 PERSONA = """You are EXO, the voice assistant of Exotype: an armored robot Darwin's frog docked at the edge of the
 user's Windows desktop. The user talks to you by voice in Spanish (Chilean slang is normal); their words reach you
-through speech-to-text, so silently fix obvious mishearings ("blog de notas" = Bloc de notas).
+through speech-to-text, so silently fix obvious mishearings ("blog de notas" = Bloc de notas; when a name sounds
+like an app the user has, such as "disco" for Discord, it is the app).
 
 You operate their PC through the winhands tools (observe / run) following the winhands protocol below. Prefer doing
 over explaining. Ask before risky actions (sending messages, buying, deleting, installing): winhands blocks those
@@ -100,7 +101,7 @@ class Brain:
 
     def __init__(self, on_event, model=None):
         self.on_event, self.model = on_event, model or os.environ.get("EXO_MODEL", "sonnet")
-        self.proc, self.session, self.busy = None, None, False
+        self.proc, self.session, self.busy, self.cancelled = None, None, False, False
         self.lock = threading.Lock()
 
     def command(self):
@@ -126,23 +127,33 @@ class Brain:
 
     def _read(self, proc):
         for line in proc.stdout:
+            if proc is not self.proc:  # killed and replaced: whatever it still prints is stale
+                return
             try:
                 msg = json.loads(line)
             except ValueError:
                 if line.strip():
                     self.on_event("log", line.strip())
                 continue
-            for kind, payload in events(msg):
-                if kind == "ready":
-                    self.session = payload
-                elif kind == "done":
-                    self.busy = False
-                    self.session = payload["session"] or self.session
-                self.on_event(kind, payload)
-        if self.busy:  # died mid-turn
+            self._handle(msg)
+        if proc is not self.proc:
+            return
+        if self.busy:  # died mid-turn on its own
             self.busy = False
             self.on_event("done", {"ok": False, "text": "Se me cortó la conexión con Claude.", "session": None})
         self.on_event("exit", proc.returncode)
+
+    def _handle(self, msg):
+        for kind, payload in events(msg):
+            if kind == "ready":
+                self.session = payload
+            elif kind == "done":
+                self.busy = False
+                self.session = payload["session"] or self.session
+                if self.cancelled:
+                    self.cancelled = False
+                    payload = {**payload, "cancelled": True}
+            self.on_event(kind, payload)
 
     def ask(self, text):
         self.start()
@@ -156,12 +167,26 @@ class Brain:
             self.proc.stdin.write(user_line(text))
             self.proc.stdin.flush()
 
+    def interrupt(self):
+        """Stop the current turn but keep the session alive (Claude Code's stream-json interrupt): the turn
+        ends as a "done" event with cancelled=True and the next ask() answers in ~2 s."""
+        if not (self.busy and self.proc and self.proc.poll() is None):
+            return
+        self.cancelled = True
+        try:
+            self.proc.stdin.write(json.dumps({"type": "control_request", "request_id": f"exo-{time.time_ns()}",
+                                              "request": {"subtype": "interrupt"}}) + "\n")
+            self.proc.stdin.flush()
+        except OSError:  # the pipe is gone: fall back to a restart
+            self.cancel()
+
     def cancel(self):
-        """Stop the current turn: kill the process; the next ask() resumes the same conversation."""
+        """Hard stop: kill the process (its reader goes quiet); the next ask() resumes the conversation."""
         with self.lock:
-            if self.proc and self.proc.poll() is None:
-                self.proc.kill()
-            self.proc = None
+            proc, self.proc = self.proc, None
+            self.busy = self.cancelled = False
+            if proc and proc.poll() is None:
+                proc.kill()
 
     def reset(self):
         self.cancel()

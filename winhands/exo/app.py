@@ -49,6 +49,7 @@ class Exo:
         self.rec = Recorder(on_level=lambda lv: self.emit("level", round(min(1.0, lv * 12), 3)))
         self.state, self.listening, self.reply, self.voice_on = "idle", False, "", True
         self._ctx = ("", "")
+        self.turn = 0  # bumped by a stop: work started before it is dropped
 
     def emit(self, kind, data=None):
         self._emit(f"window.exo && exo.on({json.dumps(kind)}, {json.dumps(data, ensure_ascii=False)})")
@@ -62,12 +63,13 @@ class Exo:
         if self.listening:
             self.rec.stop()
             return
-        if self.state in ("thinking", "working"):
-            self.brain.cancel()
+        if self.state in ("thinking", "working", "speaking"):  # busy: the mic button is a stop button
+            self.turn += 1                                     # drops a transcription still in flight
+            self.brain.interrupt()                             # Claude stops; the session stays warm
+            self.mouth.stop()
             self.set_state("idle")
             self.emit("bubble", {"who": "exo", "text": "Ok, paré."})
             return
-        self.mouth.stop()
         threading.Thread(target=self._listen, daemon=True).start()
 
     def send_text(self, text):
@@ -93,6 +95,7 @@ class Exo:
 
     # --- flow ---
     def _listen(self):
+        turn = self.turn
         self.listening = True
         self._ctx = foreground()
         self.set_state("listening")
@@ -108,6 +111,8 @@ class Exo:
             return
         self.set_state("thinking")
         text = self.ears.transcribe(audio)
+        if turn != self.turn:  # stopped while transcribing
+            return
         if not text:
             self.set_state("idle")
             return
@@ -137,6 +142,8 @@ class Exo:
         elif kind == "text":
             self.reply = ""
         elif kind == "done":
+            if data.get("cancelled"):  # stopped by the user: "Ok, paré." was already shown
+                return
             text = spoken(data["text"]) or ("Listo." if data["ok"] else "Algo falló.")
             self.emit("bubble", {"who": "exo", "text": text, "ok": data["ok"]})
             if not data["ok"]:

@@ -21,7 +21,8 @@ except ImportError:
 
 RATE = 16000
 BLOCK = 0.1  # seconds per audio block
-VOCAB = "Exo, Exotype, Bloc de notas, Chrome, YouTube, Spotify, WhatsApp, Claude, Word, Excel, Descargas, Escritorio."
+VOCAB = ("Exo, Exotype, Discord, Bloc de notas, Chrome, YouTube, Spotify, WhatsApp, Telegram, Steam, Claude, "
+         "Word, Excel, PowerPoint, Outlook, Descargas, Escritorio.")
 
 
 class Endpoint:
