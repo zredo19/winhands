@@ -138,6 +138,29 @@ Any MCP client works: the server command is just `winhands` (stdio). Set `WINHAN
 overlay, `WINHANDS_LINGER=45` for how long it stays up between actions and `WINHANDS_SHARED=0` for strict mode. From source:
 `pip install -e .` in a venv, then point the client at `python -m winhands`.
 
+## Exo, the voice assistant (experimental)
+
+Exo is an optional desktop widget for Exotype: an armored robot Darwin's frog docked at the screen edge. Click it
+(or press **Ctrl+Alt+Space**), talk, and it drives your PC through winhands.
+
+```powershell
+pip install "winhands[exo]"        # or winhands[exo-gpu] with an NVIDIA GPU (5x faster speech-to-text)
+winhands exo --shortcut            # Start Menu + Desktop shortcuts ("Exo"), no console window
+winhands exo                       # or just run it
+```
+
+- **Brain:** your own Claude Code, unmodified and logged in with your own account. Exo starts one long-lived
+  `claude -p` session (stream-json) with only the winhands tools, so turns after the first start in ~2 s. Exo never
+  sees your credentials and calls no API itself.
+- **Ears:** Whisper runs locally (faster-whisper): `large-v3-turbo` on an NVIDIA GPU, `small` on the CPU otherwise.
+  Recording stops by itself after you stop talking. `EXO_WHISPER` picks another model.
+- **Voice:** the offline Windows voice "Pablo" with a lower pitch (`EXO_VOICE` picks another installed voice).
+  Mute it from the panel.
+- **Window:** translucent and always on top. It never takes the keyboard focus unless you type in it, so "this
+  window" keeps meaning the app you were using. Exo tells Claude which window that was. Drag the frog to move it.
+- **Safety:** the winhands guards still apply. Risky actions are asked back to you in the conversation, and you
+  confirm by voice. Logs live in `~/.exo/exo.log`.
+
 ## Safety
 
 - **Ctrl + Left Alt + Q** aborts the running action. AltGr+Q still types `@`.
