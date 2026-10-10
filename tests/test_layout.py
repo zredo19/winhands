@@ -19,5 +19,7 @@ def test_pyproject_ships_the_package_and_points_the_script_at_the_cli():
     p = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert p["project"]["scripts"] == {"winhands": "winhands.cli:main"}
     st = p["tool"]["setuptools"]
-    assert st["packages"] == ["winhands"] and "py-modules" not in st
+    assert st["packages"] == ["winhands", "winhands.exo"] and "py-modules" not in st
     assert "SKILL.md" in st["package-data"]["winhands"]
+    assert st["package-data"]["winhands.exo"] == ["ui/*"]                   # Exo's page ships too
+    assert (ROOT / "winhands" / "exo" / "ui" / "index.html").is_file()
