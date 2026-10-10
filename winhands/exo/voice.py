@@ -25,25 +25,38 @@ VOCAB = ("Exo, Exotype, Discord, Bloc de notas, Chrome, YouTube, Spotify, WhatsA
          "Word, Excel, PowerPoint, Outlook, Descargas, Escritorio.")
 
 
-class Endpoint:
-    """Decides when an utterance ended: speech followed by `silence` seconds of quiet. Gives up after
-    `max_wait` seconds with no speech and cuts at `max_len` seconds."""
+def silero(audio, rate):
+    """Speech segments (start, end) in seconds, from the Silero VAD that ships with faster-whisper."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    if rate != RATE:
+        audio = np.interp(np.arange(0, len(audio), rate / RATE), np.arange(len(audio)), audio).astype(np.float32)
+    opts = VadOptions(min_silence_duration_ms=300, speech_pad_ms=100)
+    return [(s["start"] / RATE, s["end"] / RATE) for s in get_speech_timestamps(audio, opts)]
 
-    def __init__(self, block=BLOCK, silence=1.2, threshold=0.015, max_wait=8.0, max_len=30.0):
-        self.block, self.silence, self.threshold = block, silence, threshold
-        self.max_wait, self.max_len = max_wait, max_len
-        self.n = self.quiet = 0
-        self.heard = False
 
-    def push(self, level):
-        self.n += 1
-        if level > self.threshold:
-            self.heard, self.quiet = True, 0
-        else:
-            self.quiet += 1
-        t, eps = self.n * self.block, 1e-9
-        return ((self.heard and self.quiet * self.block >= self.silence - eps)
-                or (not self.heard and t >= self.max_wait - eps) or t >= self.max_len - eps)
+class SpeechEndpoint:
+    """End of an utterance by a voice detector instead of loudness: thinking pauses and quiet speech no longer cut a
+    long request. Stops `silence` seconds after the last word, after `max_wait` with no speech, or at `max_len`."""
+
+    def __init__(self, detect=silero, rate=RATE, silence=2.5, max_wait=8.0, max_len=45.0, every=3):
+        self.detect, self.rate, self.silence, self.max_wait, self.max_len = detect, rate, silence, max_wait, max_len
+        self.every, self.chunks, self.k, self.samples = every, [], 0, 0
+        self.heard, self.last_end = False, 0.0
+
+    def push(self, block):
+        self.chunks.append(block)
+        self.k += 1
+        self.samples += len(block)
+        t, eps = self.samples / self.rate, 1e-9
+        if t >= self.max_len - eps:
+            return True
+        if self.k % self.every == 0:  # the VAD looks at everything so far (~ms), a few times per second
+            segs = self.detect(np.concatenate(self.chunks), self.rate)
+            if segs:
+                self.heard, self.last_end = True, segs[-1][1]
+        if self.heard:
+            return t - self.last_end >= self.silence - eps
+        return t >= self.max_wait - eps
 
 
 class Recorder:
@@ -57,25 +70,27 @@ class Recorder:
 
     def record(self, endpoint=None):
         import sounddevice as sd
-        ep, chunks, self._stop = endpoint or Endpoint(), [], threading.Event()
+        chunks, self._stop = [], threading.Event()
         rate = RATE
         try:
             stream = sd.InputStream(samplerate=rate, channels=1, dtype="float32", blocksize=int(rate * BLOCK))
         except Exception:  # device refuses 16 kHz: record at its own rate, resample afterwards
             rate = int(sd.query_devices(kind="input")["default_samplerate"])
             stream = sd.InputStream(samplerate=rate, channels=1, dtype="float32", blocksize=int(rate * BLOCK))
+        ep = endpoint or SpeechEndpoint(rate=rate)
         with stream:
             while not self._stop.is_set():
                 block, _ = stream.read(int(rate * BLOCK))
                 block = block[:, 0].copy()
                 chunks.append(block)
-                level = float(np.sqrt(np.mean(block ** 2)))
-                self.on_level(level)
-                if ep.push(level):
+                self.on_level(float(np.sqrt(np.mean(block ** 2))))
+                if ep.push(block):
                     break
-        if not chunks or not ep.heard:
+        if not chunks:
             return None
         audio = np.concatenate(chunks)
+        if not ep.heard and not ep.detect(audio, rate):  # stopped by hand before the VAD had a look
+            return None
         if rate != RATE:
             audio = np.interp(np.arange(0, len(audio), rate / RATE), np.arange(len(audio)), audio)
         return audio.astype(np.float32)
@@ -105,7 +120,7 @@ class Ears:
 
     def transcribe(self, audio):
         self.ready.wait()
-        segs, _ = self.model.transcribe(audio, language="es", beam_size=1, vad_filter=True,
+        segs, _ = self.model.transcribe(audio, language="es", beam_size=5, vad_filter=True,
                                         initial_prompt=VOCAB, condition_on_previous_text=False)
         return " ".join(s.text for s in segs).strip()
 
