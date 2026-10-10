@@ -46,6 +46,8 @@ winhands = "winhands.cli:main"
 dev = ["pytest"]
 # Exo, the voice assistant widget (winhands exo): Qt WebEngine window, local Whisper, Windows voices
 exo = ["PySide6>=6.8", "faster-whisper>=1.1", "sounddevice", "winrt-Windows.Media.SpeechSynthesis"]
+# NVIDIA GPU speech-to-text for Exo (~1 GB of CUDA libraries): 5x faster and a bigger, more accurate model
+exo-gpu = ["winhands[exo]", "nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
 
 [tool.setuptools]
 packages = ["winhands", "winhands.exo"]

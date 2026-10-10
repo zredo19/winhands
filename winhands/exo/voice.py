@@ -4,10 +4,20 @@ import asyncio, os, tempfile, threading, time, wave, winsound
 
 import numpy as np
 
+def _cuda_dlls():
+    """pip's nvidia-cublas-cu12 / nvidia-cudnn-cu12 ship DLLs that ctranslate2 loads lazily by name."""
+    import glob, site
+    for sp in site.getsitepackages():
+        for d in glob.glob(os.path.join(sp, "nvidia", "*", "bin")):
+            os.add_dll_directory(d)
+            os.environ["PATH"] = d + os.pathsep + os.environ["PATH"]
+
+
+_cuda_dlls()
 try:  # load order matters: ctranslate2 (Whisper) after WinRT crashes with an access violation
     import ctranslate2  # noqa: F401
 except ImportError:
-    pass
+    ctranslate2 = None
 
 RATE = 16000
 BLOCK = 0.1  # seconds per audio block
@@ -71,16 +81,25 @@ class Recorder:
 
 
 class Ears:
-    """Whisper model, loaded once in the background (first load downloads it, ~460 MB for 'small')."""
+    """Whisper, loaded once in the background (the first run downloads the model). NVIDIA GPU: large-v3-turbo
+    (~1.8 s per phrase on a GTX 1650 Ti); otherwise small on the CPU (~3 s). EXO_WHISPER overrides the model."""
 
     def __init__(self, model=None):
-        self.name = model or os.environ.get("EXO_WHISPER", "small")
-        self.model, self.ready = None, threading.Event()
+        self.name = model or os.environ.get("EXO_WHISPER")
+        self.model, self.ready, self.device = None, threading.Event(), None
         threading.Thread(target=self._load, daemon=True).start()
 
     def _load(self):
         from faster_whisper import WhisperModel
-        self.model = WhisperModel(self.name, device="cpu", compute_type="int8")
+        try:
+            if not ctranslate2 or not ctranslate2.get_cuda_device_count():
+                raise RuntimeError("no CUDA device")
+            self.model = WhisperModel(self.name or "large-v3-turbo", device="cuda", compute_type="int8_float16")
+            self.model.transcribe(np.zeros(RATE, np.float32), language="es")  # warm up (needs cuBLAS / cuDNN)
+            self.device = "cuda"
+        except Exception:
+            self.model = WhisperModel(self.name or "small", device="cpu", compute_type="int8")
+            self.device = "cpu"
         self.ready.set()
 
     def transcribe(self, audio):
