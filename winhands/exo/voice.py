@@ -1,6 +1,6 @@
 """Exo's ears and voice: microphone capture with automatic end of speech, local Whisper
 speech-to-text (faster-whisper, offline) and the Windows "Pablo" voice (WinRT, offline)."""
-import asyncio, os, tempfile, threading, time, wave, winsound
+import asyncio, os, threading, time, wave
 
 import numpy as np
 
@@ -125,50 +125,146 @@ class Ears:
         return " ".join(s.text for s in segs).strip()
 
 
+VOICES = {  # key -> (engine, engine voice, label); Kokoro voices sound human, "pablo" is the built-in Windows voice
+    "alex": ("kokoro", "em_alex", "Alex"),
+    "dora": ("kokoro", "ef_dora", "Dora"),
+    "santa": ("kokoro", "em_santa", "Santa"),
+    "pablo": ("windows", "Pablo", "Pablo (Windows)"),
+}
+KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+KOKORO_FILES = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
+
+
+def sentences(text, limit=220):
+    """Split a reply into speakable chunks (so the first one plays while the rest is synthesized)."""
+    import re
+    out = []
+    for part in re.split(r"(?<=[.!?…])\s+", text):
+        part = part.strip()
+        while len(part) > limit:  # a long stretch without a full stop: cut at the last comma or space
+            cut = max(part.rfind(",", 0, limit), part.rfind(" ", 0, limit))
+            cut = cut if cut > 0 else limit
+            out.append(part[:cut + 1].strip())
+            part = part[cut + 1:].strip()
+        if part:
+            out.append(part)
+    return out
+
+
+def kokoro_dir():
+    from .brain import HOME
+    return HOME / "models" / "kokoro"
+
+
+def ensure_kokoro():
+    """Download the Kokoro model once (~340 MB) into ~/.exo/models/kokoro. Returns the folder or None."""
+    import urllib.request
+    d = kokoro_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        for f in KOKORO_FILES:
+            if not (d / f).exists():
+                urllib.request.urlretrieve(KOKORO_URL + f, d / (f + ".part"))
+                (d / (f + ".part")).replace(d / f)
+        return d
+    except Exception:
+        return None
+
+
 class Mouth:
-    """Text to speech with a lower, robotic-heroic pitch. say() returns the clip length in seconds."""
+    """Text to speech, sentence by sentence: Kokoro (local, human-sounding) or the Windows voice as a fallback.
+    say() returns at once; busy() tells whether it is still talking; stop() cuts it."""
 
-    def __init__(self, voice=None, pitch=0.75, rate=1.05):
-        self.voice = voice or os.environ.get("EXO_VOICE", "Pablo")
-        self.pitch, self.rate = pitch, rate
-        self.path = os.path.join(tempfile.gettempdir(), "exo-voice.wav")
+    def __init__(self, voice=None, speed=1.05):
+        self.voice = voice or os.environ.get("EXO_VOICE", "alex")
+        self.speed, self.gen, self._thread, self._kokoro = speed, 0, None, None
+        self._lock = threading.Lock()
+        threading.Thread(target=self._load, daemon=True).start()
 
-    async def _synth(self, text):
-        from winrt.windows.media.speechsynthesis import SpeechSynthesizer
-        from winrt.windows.storage.streams import DataReader
-        s = SpeechSynthesizer()
-        voices = list(SpeechSynthesizer.all_voices)
-        pick = (next((v for v in voices if self.voice.lower() in v.display_name.lower()), None)
-                or next((v for v in voices if v.language.startswith("es")), None))
-        if pick:
-            s.voice = pick
-        s.options.audio_pitch, s.options.speaking_rate = self.pitch, self.rate
-        st = await s.synthesize_text_to_stream_async(text)
-        r = DataReader(st.get_input_stream_at(0))
-        await r.load_async(st.size)
-        buf = bytearray(st.size)
-        r.read_bytes(buf)
-        return bytes(buf)
+    def _load(self):
+        d = ensure_kokoro()
+        if d is None:
+            return
+        try:
+            from kokoro_onnx import Kokoro
+            with self._lock:
+                self._kokoro = Kokoro(str(d / KOKORO_FILES[0]), str(d / KOKORO_FILES[1]))
+        except Exception:
+            self._kokoro = None
+
+    def _synth(self, text):
+        """-> (float32 samples, sample rate)."""
+        engine, name, _ = VOICES.get(self.voice, VOICES["alex"])
+        if engine == "kokoro" and self._kokoro is not None:
+            with self._lock:
+                samples, sr = self._kokoro.create(text, voice=name, speed=self.speed, lang="es")
+            return np.asarray(samples, np.float32), sr
+        return self._windows(text, name if engine == "windows" else "Pablo")
+
+    @staticmethod
+    def _windows(text, name):
+        async def go():
+            from winrt.windows.media.speechsynthesis import SpeechSynthesizer
+            from winrt.windows.storage.streams import DataReader
+            s = SpeechSynthesizer()
+            voices = list(SpeechSynthesizer.all_voices)
+            pick = (next((v for v in voices if name.lower() in v.display_name.lower()), None)
+                    or next((v for v in voices if v.language.startswith("es")), None))
+            if pick:
+                s.voice = pick
+            st = await s.synthesize_text_to_stream_async(text)
+            r = DataReader(st.get_input_stream_at(0))
+            await r.load_async(st.size)
+            buf = bytearray(st.size)
+            r.read_bytes(buf)
+            return bytes(buf)
+        import io
+        with wave.open(io.BytesIO(asyncio.run(go()))) as w:
+            sr, raw = w.getframerate(), w.readframes(w.getnframes())
+        return np.frombuffer(raw, np.int16).astype(np.float32) / 32768, sr
 
     def say(self, text):
         self.stop()
-        data = asyncio.run(self._synth(text))
-        with open(self.path, "wb") as f:
-            f.write(data)
-        with wave.open(self.path) as w:
-            secs = w.getnframes() / float(w.getframerate())
-        winsound.PlaySound(self.path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
-        return secs
+        gen = self.gen
+        self._thread = threading.Thread(target=self._run, args=(sentences(text), gen), daemon=True)
+        self._thread.start()
 
-    @staticmethod
-    def stop():
-        winsound.PlaySound(None, 0)
+    def _run(self, parts, gen):
+        import sounddevice as sd
+        if not parts:
+            return
+        nxt = self._synth(parts[0])
+        for i in range(len(parts)):
+            if gen != self.gen:
+                return
+            audio, sr = nxt
+            sd.play(audio, sr)
+            nxt = self._synth(parts[i + 1]) if i + 1 < len(parts) else None  # next one while this one plays
+            end = time.time() + len(audio) / sr
+            while time.time() < end:
+                if gen != self.gen:
+                    sd.stop()
+                    return
+                time.sleep(0.03)
+
+    def busy(self):
+        return self._thread is not None and self._thread.is_alive()
+
+    def stop(self):
+        self.gen += 1
+        try:
+            import sounddevice as sd
+            sd.stop()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":  # manual check: python -m winhands.exo.voice
     m = Mouth()
-    print("speaking", round(m.say("Hola, soy Exo. Habla después del pitido."), 1), "s")
-    time.sleep(3)
+    time.sleep(2)
+    m.say("Hola, soy Exo. Habla después del pitido.")
+    while m.busy():
+        time.sleep(0.1)
     ears = Ears()
     print("listening...")
     a = Recorder(on_level=lambda x: None).record()

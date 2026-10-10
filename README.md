@@ -154,8 +154,9 @@ winhands exo                       # or just run it
   sees your credentials and calls no API itself.
 - **Ears:** Whisper runs locally (faster-whisper): `large-v3-turbo` on an NVIDIA GPU, `small` on the CPU otherwise.
   Recording stops by itself after you stop talking. `EXO_WHISPER` picks another model.
-- **Voice:** the offline Windows voice "Pablo" with a lower pitch (`EXO_VOICE` picks another installed voice).
-  Mute it from the panel.
+- **Voice:** Kokoro, a local neural voice that sounds human (Alex, Dora or Santa; downloaded once, ~340 MB, into
+  `~/.exo/models`), spoken sentence by sentence so it starts in about a second. The Windows voice "Pablo" is the
+  fallback. Pick the voice or mute it from the speaker menu in the panel.
 - **Window:** translucent and always on top. It never takes the keyboard focus unless you type in it, so "this
   window" keeps meaning the app you were using. Exo tells Claude which window that was. Drag the frog to move it.
 - **Safety:** the winhands guards still apply. Risky actions are asked back to you in the conversation, and you

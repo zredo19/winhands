@@ -29,3 +29,12 @@ def test_speech_endpoint_gives_up_on_silence_and_caps_length():
     assert out[-1] is True and not any(out[:-1]) and not ep.heard
     ep = SpeechEndpoint(_speech((0.0, 99.0)), rate=100, max_len=2.0, every=1)
     assert blocks(ep, 2.0)[-1] is True
+
+
+def test_sentences_split_a_reply_so_speech_can_start_early():
+    from winhands.exo.voice import sentences
+    assert sentences("Entendido, abro Discord. Listo, ya está abierto.") == ["Entendido, abro Discord.", "Listo, ya está abierto."]
+    assert sentences("¿Seguro? ¡Dale! Son las 3.45 pm") == ["¿Seguro?", "¡Dale!", "Son las 3.45 pm"]
+    assert sentences("  ") == []
+    long = "uno, " * 60 + "fin."                                          # no full stop for a long stretch
+    assert all(len(c) <= 220 for c in sentences(long)) and "".join(sentences(long)).replace(" ", "") == long.replace(" ", "")

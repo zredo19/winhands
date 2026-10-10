@@ -35,7 +35,8 @@ MODELS = {  # picker order: fastest to most capable; "id" is what Claude Code ru
     "sonnet": {"id": "claude-sonnet-5-5", "label": "Sonnet 5.5", "blurb": "Balanced, recommended"},
     "opus": {"id": "claude-opus-5-5", "label": "Opus 5.5", "blurb": "Most capable, slower"},
 }
-DEFAULTS = {"model": "sonnet", "voice": True}
+VOICE_KEYS = ("alex", "dora", "santa", "pablo")  # voice.VOICES (kept light: brain does not import the audio stack)
+DEFAULTS = {"model": "sonnet", "voice": True, "voice_name": "alex"}
 
 
 def _clean(data):
@@ -46,6 +47,8 @@ def _clean(data):
             out["model"] = data["model"]
         if isinstance(data.get("voice"), bool):
             out["voice"] = data["voice"]
+        if data.get("voice_name") in VOICE_KEYS:
+            out["voice_name"] = data["voice_name"]
     return out
 
 

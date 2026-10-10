@@ -47,12 +47,12 @@ class Exo:
         self.prefs_path = HOME / "preferences.json"
         self.prefs = load_settings(self.prefs_path)
         self.brain = Brain(self._on_brain, model=os.environ.get("EXO_MODEL") or self.prefs["model"])
-        self.ears, self.mouth = Ears(), Mouth()
+        self.ears, self.mouth = Ears(), Mouth(voice=os.environ.get("EXO_VOICE") or self.prefs["voice_name"])
         self.rec = Recorder(on_level=lambda lv: self.emit("level", round(min(1.0, lv * 12), 3)))
         self.state, self.listening, self.reply, self.voice_on = "idle", False, "", self.prefs["voice"]
         self._ctx = ("", "")
         self.turn = 0  # bumped by a stop: work started before it is dropped
-        self.reply, self.ack, self.voice_end = "", None, 0.0
+        self.reply, self.ack = "", None
 
     def emit(self, kind, data=None):
         self._emit(f"window.exo && exo.on({json.dumps(kind)}, {json.dumps(data, ensure_ascii=False)})")
@@ -98,14 +98,24 @@ class Exo:
         self.emit("bubble", {"who": "exo", "text": f"Listo, ahora pienso con {MODELS[model]['label']}."})
         self._save()
 
+    def set_voice_name(self, key):
+        from .voice import VOICES
+        if key not in VOICES:
+            return
+        self.mouth.voice, self.voice_on = key, True
+        self._save()
+        self.mouth.say("Hola, soy Exo. Así sueno ahora.")
+
     def settings(self):
         from .brain import MODELS
-        return {"model": self.brain.model, "voice": self.voice_on,
-                "models": [{"key": k, **v} for k, v in MODELS.items()]}
+        from .voice import VOICES
+        return {"model": self.brain.model, "voice": self.voice_on, "voice_name": self.mouth.voice,
+                "models": [{"key": k, **v} for k, v in MODELS.items()],
+                "voices": [{"key": k, "label": v[2]} for k, v in VOICES.items()]}
 
     def _save(self):
         from .brain import save_settings
-        save_settings(self.prefs_path, {"model": self.brain.model, "voice": self.voice_on})
+        save_settings(self.prefs_path, {"model": self.brain.model, "voice": self.voice_on, "voice_name": self.mouth.voice})
 
     def reset(self):
         self.brain.reset()
@@ -146,7 +156,7 @@ class Exo:
         self.emit("bubble", {"who": "user", "text": text})
         title, exe = self._ctx
         ctx = f'[The user was in the window "{title}" ({exe}) when they spoke.]\n' if title else ""
-        self.reply, self.ack, self.voice_end = "", None, 0.0
+        self.reply, self.ack = "", None
         self.set_state("thinking")
         try:
             self.brain.ask(ctx + text)
@@ -155,13 +165,9 @@ class Exo:
             self.set_state("error")
 
     def _say(self, text):
-        """Speak without blocking; voice_end is when the clip finishes."""
-        if not self.voice_on:
-            return
-        try:
-            self.voice_end = time.time() + self.mouth.say(text)
-        except Exception:
-            self.voice_end = time.time()
+        """Speak without blocking (mouth.busy() tells when it is done)."""
+        if self.voice_on:
+            self.mouth.say(text)
 
     def _on_brain(self, kind, data):
         from .brain import first_sentence, spoken, without_ack
@@ -193,11 +199,11 @@ class Exo:
                 text = text or "Listo."
                 self.emit("bubble", {"who": "exo", "text": text, "ok": True})
             if self.voice_on and text:
-                while time.time() < self.voice_end and self.state != "idle":  # let the acknowledgement finish
+                while self.mouth.busy() and self.state != "idle":  # let the acknowledgement finish
                     time.sleep(0.1)
                 self.set_state("speaking")
                 self._say(text)
-                while time.time() < self.voice_end and self.state == "speaking":
+                while self.mouth.busy() and self.state == "speaking":
                     time.sleep(0.1)
             if self.state in ("speaking", "thinking", "working"):
                 self.set_state("success")
@@ -268,6 +274,10 @@ def main():
         @Slot(bool)
         def set_voice(self, on):
             self.exo.set_voice(on)
+
+        @Slot(str)
+        def set_voice_name(self, key):
+            self.exo.set_voice_name(key)
 
         @Slot(str)
         def set_model(self, model):

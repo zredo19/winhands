@@ -114,3 +114,14 @@ def test_without_ack_drops_the_confirmation_already_spoken():
     assert without_ack("Listo, ya está abierto.", "Entendido, abro Discord.") == "Listo, ya está abierto."
     assert without_ack("Entendido, abro Discord.", "Entendido, abro Discord.") == ""
     assert without_ack("Hola.", None) == "Hola."
+
+
+def test_voice_choice_is_remembered_and_matches_the_voice_engine(tmp_path):
+    from winhands.exo.brain import DEFAULTS, VOICE_KEYS, load_settings, save_settings
+    from winhands.exo.voice import VOICES
+    assert set(VOICE_KEYS) == set(VOICES) and DEFAULTS["voice_name"] == "alex"
+    f = tmp_path / "p.json"
+    save_settings(f, {"voice_name": "dora"})
+    assert load_settings(f)["voice_name"] == "dora"
+    save_settings(f, {"voice_name": "siri"})
+    assert load_settings(f)["voice_name"] == "alex"
