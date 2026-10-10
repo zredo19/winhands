@@ -72,3 +72,23 @@ def test_mouse_down_reports_the_click_to_the_overlay(monkeypatch):
     assert clicks == ["right"] and len(sent) == 1
     inputs.mouse_up("right")
     assert clicks == ["right"]                                  # a release is not a click
+
+
+def test_send_remembers_where_the_last_real_input_landed(monkeypatch):
+    monkeypatch.setattr(inputs, "_raw", lambda *a: None)
+    monkeypatch.setattr(inputs, "guard", None)
+    monkeypatch.setattr(inputs, "_cursor", lambda: (-1500, 300))
+    inputs.send(inputs.key_input(inputs.scan_of("a")))
+    assert inputs.last_at[0] is None                                   # keys land in the foreground window
+    inputs.send(inputs.INPUT(type=0))                                  # a mouse event
+    assert inputs.last_at[0] == (-1500, 300)
+
+
+def test_where_follows_the_latest_real_input_then_the_target(monkeypatch):
+    monkeypatch.setattr(inputs, "_foreground", lambda: 77)
+    inputs.last[0], inputs.last_at[0] = 100.0, (-1500, 300)
+    assert inputs.where(target=5, since=90.0) == (-1500, 300)          # clicked on the left monitor during this run
+    inputs.last_at[0] = None
+    assert inputs.where(target=5, since=90.0) == 77                    # typed: the foreground window, even long after
+    assert inputs.where(target=5, since=120.0) == 5                    # no input yet in this run: the target window
+    assert inputs.where(target=None, since=120.0) == 77

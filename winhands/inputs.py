@@ -58,6 +58,7 @@ TAP = 0.04       # games poll key state per frame: taps shorter than ~30 ms get 
 check = None     # set by the server: raises on kill switch / user interrupt
 held = set()     # ("key", scan) / ("btn", name) currently pressed by us
 last = [0.0]     # monotonic time of our latest real input or focus steal
+last_at = [None]  # screen point of our latest mouse input; None after keys (they land in the foreground window)
 guard = None     # set by the server (shared mode): raises if the user is using the PC right now
 on_move = None   # set by the server: (x, y) of each absolute move, drawn as the overlay cursor
 on_click = None  # set by the server: button name of each press, played as the overlay click ripple
@@ -126,6 +127,25 @@ def send(*inputs):
     """Atomic batch. Input into elevated windows is silently dropped by UIPI (not reported)."""
     touch()
     _raw(*inputs)
+    last_at[0] = None if any(i.type == 1 for i in inputs) else _cursor()  # INPUT_KEYBOARD = 1
+
+
+def _cursor():
+    p = W.POINT()
+    return (p.x, p.y) if _u32.GetCursorPos(ctypes.byref(p)) else None
+
+
+def _foreground():
+    return _u32.GetForegroundWindow()
+
+
+def where(target=None, since=0.0):
+    """What the agent is acting on, for the overlay border: once this run (started at `since`) sent real input, the
+    point of the latest mouse input or the foreground window after keys (that is where they land); before that,
+    the target window."""
+    if last[0] >= since:
+        return last_at[0] or _foreground()
+    return target or _foreground()
 
 
 def _raw(*inputs):

@@ -401,14 +401,20 @@ def _overlay_end(ov, stopped, done):
 
 
 def _overlay_on(d):
-    """Border on the target window's monitor (primary when there is no target)."""
+    """Border on the monitor the agent acts on, followed in real time: the point of its latest click, the
+    foreground window after keys (where they land), else the target window."""
     ov = state["overlay"]
     if ov:
         _overlay_state(ov, "acting")
-        try:
-            ov.show(d.win.NativeWindowHandle if d.win else 0)
-        except Exception:
-            ov.show()
+
+        def target():
+            try:
+                return d.win.NativeWindowHandle if d.win else 0
+            except Exception:
+                return 0
+        since = time.monotonic()
+        ov.locate = lambda: inputs.where(target(), since)
+        ov.show(target())  # its first frame already moves to where() if that is another monitor
 
 
 def _observe(target, mode, region, grid, marks, frames, interval, scale):

@@ -244,3 +244,8 @@ def test_cursor_is_premultiplied():
         w, h, buf, _ = overlay.cursor_frame(**kw)
         a = _arr(buf, w, h)
         assert (a[..., :3].max(-1) <= a[..., 3]).all()
+
+
+def test_monitor_accepts_a_screen_point():
+    from winhands.overlay import monitor
+    assert monitor((0, 0)) == monitor(0)                                # (0, 0) is on the primary monitor

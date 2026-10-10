@@ -94,10 +94,15 @@ for _f, _res, _args in [  # typed: 64-bit handles and hwnds above 2**31 must not
     _f.restype, _f.argtypes = _res, _args
 
 
-def monitor(hwnd=0):
-    """((left, top, right, bottom), scale) of hwnd's monitor; the primary one when hwnd is 0 or gone."""
-    hm = (_u.MonitorFromWindow(hwnd, 1) if hwnd and _u.IsWindow(hwnd)
-          else _u.MonitorFromPoint(W.POINT(0, 0), 1))                    # MONITOR_DEFAULTTOPRIMARY
+def monitor(where=0):
+    """((left, top, right, bottom), scale) of the monitor of `where`: a window handle, or an (x, y) screen point;
+    the primary one when it is 0 or a closed window."""
+    if isinstance(where, tuple):
+        hm = _u.MonitorFromPoint(W.POINT(*where), 2)                     # MONITOR_DEFAULTTONEAREST
+    elif where and _u.IsWindow(where):
+        hm = _u.MonitorFromWindow(where, 1)
+    else:
+        hm = _u.MonitorFromPoint(W.POINT(0, 0), 1)                       # MONITOR_DEFAULTTOPRIMARY
     mi = MONITORINFO(ctypes.sizeof(MONITORINFO))
     _u.GetMonitorInfoW(hm, ctypes.byref(mi))
     dpi = W.UINT(96)
@@ -571,6 +576,7 @@ class Overlay:
         self.t_click = self.t_move = self.last_xy = None
         self.angle, self.cmode, self.cpos, self.bkey, self.hkey = 0, None, (0, 0), None, None
         self.mon, self.mscale = (0, 0, 0, 0), 1.0
+        self.locate, self.t_locate = None, 0.0  # locate() -> hwnd or (x, y) the agent acts on (set by the server)
         self.ready = threading.Event()
         threading.Thread(target=self._run, daemon=True, name="winhands-overlay").start()
 
@@ -688,6 +694,13 @@ class Overlay:
         if not self.visible:
             return
         now = time.monotonic()
+        if self.locate and now - self.t_locate > 0.2:  # follow, in real time, where the agent acts
+            self.t_locate = now
+            try:
+                self.target = self.locate()
+            except Exception:
+                pass
+            self._place()                              # no-op unless the monitor changed
         t, L = now - self.t_show, self.layers
         if self.stop_t0 is not None:
             edge, alpha, rise, done = stop_phase(now - self.stop_t0)
