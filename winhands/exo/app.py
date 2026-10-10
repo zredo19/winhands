@@ -52,6 +52,7 @@ class Exo:
         self.state, self.listening, self.reply, self.voice_on = "idle", False, "", self.prefs["voice"]
         self._ctx = ("", "")
         self.turn = 0  # bumped by a stop: work started before it is dropped
+        self.reply, self.ack, self.voice_end = "", None, 0.0
 
     def emit(self, kind, data=None):
         self._emit(f"window.exo && exo.on({json.dumps(kind)}, {json.dumps(data, ensure_ascii=False)})")
@@ -144,7 +145,7 @@ class Exo:
         self.emit("bubble", {"who": "user", "text": text})
         title, exe = self._ctx
         ctx = f'[The user was in the window "{title}" ({exe}) when they spoke.]\n' if title else ""
-        self.reply = ""
+        self.reply, self.ack, self.voice_end = "", None, 0.0
         self.set_state("thinking")
         try:
             self.brain.ask(ctx + text)
@@ -152,13 +153,28 @@ class Exo:
             self.emit("bubble", {"who": "exo", "text": f"No pude hablar con Claude Code: {e}", "ok": False})
             self.set_state("error")
 
+    def _say(self, text):
+        """Speak without blocking; voice_end is when the clip finishes."""
+        if not self.voice_on:
+            return
+        try:
+            self.voice_end = time.time() + self.mouth.say(text)
+        except Exception:
+            self.voice_end = time.time()
+
     def _on_brain(self, kind, data):
-        from .brain import spoken
+        from .brain import first_sentence, spoken, without_ack
         if kind in ("log", "exit", "ready", "tool", "done"):
             log(f"brain {kind}: {str(data)[:500]}")
         if kind == "delta":
             self.reply += data
-            self.emit("stream", self.reply)
+            if self.ack is None and first_sentence(self.reply):
+                self.ack = first_sentence(self.reply)  # "Entendido, abro Discord.": say it now, act after
+                self.emit("bubble", {"who": "exo", "text": spoken(self.ack)})
+                self._say(spoken(self.ack))
+            rest = without_ack(self.reply, self.ack)
+            if rest:
+                self.emit("stream", rest)
         elif kind == "tool" and data.startswith("mcp__winhands"):
             self.set_state("working")
         elif kind == "text":
@@ -166,19 +182,21 @@ class Exo:
         elif kind == "done":
             if data.get("cancelled"):  # stopped by the user: "Ok, paré." was already shown
                 return
-            text = spoken(data["text"]) or ("Listo." if data["ok"] else "Algo falló.")
-            self.emit("bubble", {"who": "exo", "text": text, "ok": data["ok"]})
+            ack = spoken(self.ack) if self.ack else None
+            text = without_ack(spoken(data["text"]), ack)
             if not data["ok"]:
+                self.emit("bubble", {"who": "exo", "text": text or "Algo falló.", "ok": False})
                 self.set_state("error")
                 return
-            if self.voice_on:
+            if text or not ack:
+                text = text or "Listo."
+                self.emit("bubble", {"who": "exo", "text": text, "ok": True})
+            if self.voice_on and text:
+                while time.time() < self.voice_end and self.state != "idle":  # let the acknowledgement finish
+                    time.sleep(0.1)
                 self.set_state("speaking")
-                try:
-                    secs = self.mouth.say(text)
-                except Exception:
-                    secs = 0
-                end = time.time() + secs
-                while time.time() < end and self.state == "speaking":
+                self._say(text)
+                while time.time() < self.voice_end and self.state == "speaking":
                     time.sleep(0.1)
             if self.state in ("speaking", "thinking", "working"):
                 self.set_state("success")

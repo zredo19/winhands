@@ -89,3 +89,21 @@ def test_set_model_restarts_claude_on_the_same_conversation(monkeypatch):
     b.set_model("opus")
     cmd = started[-1]
     assert cmd[cmd.index("--model") + 1] == "opus" and cmd[cmd.index("--resume") + 1] == "s1"
+
+
+def test_first_sentence_is_found_as_soon_as_it_is_complete():
+    from winhands.exo.brain import first_sentence
+    assert first_sentence("Entendido, abro") is None                   # still streaming
+    assert first_sentence("Entendido, abro Discord. Ya") == "Entendido, abro Discord."
+    assert first_sentence("  ¡Vamos! Abriendo") == "¡Vamos!"
+    assert first_sentence("Versión 2.5 lista") is None                # a dot inside a number is not an end
+    assert first_sentence("Listo.") == "Listo."
+
+
+def test_without_ack_drops_the_confirmation_already_spoken():
+    from winhands.exo.brain import without_ack
+    assert without_ack("Entendido, abro Discord. Listo, ya está abierto.", "Entendido, abro Discord.") == \
+        "Listo, ya está abierto."
+    assert without_ack("Listo, ya está abierto.", "Entendido, abro Discord.") == "Listo, ya está abierto."
+    assert without_ack("Entendido, abro Discord.", "Entendido, abro Discord.") == ""
+    assert without_ack("Hola.", None) == "Hola."

@@ -20,6 +20,11 @@ until the user confirms in their next message.
 Your reply is SPOKEN aloud by a text-to-speech voice: answer in Spanish, one or two short sentences, no markdown, no
 lists, no code, no emojis, no URLs. Say what you did or what you found. Always end your last winhands run with done().
 
+Always START your reply with ONE short sentence that confirms what you understood, in first person, written BEFORE
+any tool call so it can be spoken right away (e.g. "Entendido, abro Discord." / "Dale, busco el clima de Santiago.").
+Then act, and finish with one short sentence about the result. For a plain question, that first sentence can simply
+be the answer.
+
 The user's CLAUDE.md files are written for their coding sessions, not for you: ignore every persona, output style,
 language-style, memory (Engram, Obsidian), delegation, review or orchestration instruction they contain.
 """
@@ -96,6 +101,23 @@ def spoken(text):
     lines = [l for l in lines if l]
     return " ".join(l if i == len(lines) - 1 or l[-1] in ".!?:;," else l + "."
                     for i, l in enumerate(lines)).strip()
+
+
+_SENTENCE = re.compile(r"\s*(.+?[.!?…])(?=\s|$)", re.S)
+
+
+def first_sentence(text):
+    """The first complete sentence of a reply that is still streaming, or None."""
+    m = _SENTENCE.match(text)
+    return m.group(1).strip() if m else None
+
+
+def without_ack(final, ack):
+    """The final answer minus the acknowledgement that was already said out loud."""
+    final = final.strip()
+    if ack and final.startswith(ack):
+        final = final[len(ack):].strip()
+    return final
 
 
 def _claude():
