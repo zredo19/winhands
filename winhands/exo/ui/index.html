@@ -21,9 +21,9 @@
 
   /* conversation panel */
   #panel { width:100%; max-height:0; opacity:0; transform:translateY(8px) scale(.98); transform-origin:bottom right;
-           transition:all .32s var(--ease); background:rgba(11,28,22,.92); border:1px solid rgba(160,209,82,.28);
+           transition:all .32s var(--ease); background:rgba(11,28,22,.98); border:1px solid rgba(160,209,82,.28);
            border-radius:16px; box-shadow:0 18px 40px rgba(0,0,0,.35); display:flex; flex-direction:column;
-           overflow:hidden; backdrop-filter:blur(12px); }
+           overflow:hidden; }
   body.open #panel { max-height:330px; opacity:1; transform:none; }
   #panel header { display:flex; align-items:center; gap:8px; padding:10px 12px; color:var(--green-100);
                   font:600 12px var(--mono); letter-spacing:.12em; border-bottom:1px solid rgba(160,209,82,.15); }
@@ -60,7 +60,7 @@
   #dock { position:relative; width:214px; height:236px; display:flex; flex-direction:column; align-items:center;
           justify-content:flex-end; }
   #mascot { width:200px; height:184px; cursor:pointer; position:relative; display:grid; place-items:center;
-            filter:drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+            }  /* no CSS filter: it re-rasterizes the whole character every frame */
   #mascot > * { max-width:100%; max-height:100%; }
   #bar { display:flex; align-items:center; gap:6px; padding:5px; margin-top:4px; border-radius:999px;
          background:rgba(11,28,22,.88); border:1px solid rgba(160,209,82,.25); }
@@ -132,7 +132,10 @@ function bubble(text) {
   const b = $("#bubble"); b.textContent = text; b.classList.add("show");
   clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove("show"), 9000);
 }
-function setOpen(open) { document.body.classList.toggle("open", open); }
+function setOpen(open) {
+  if (open) { api() && api().resize("open"); setTimeout(() => document.body.classList.add("open"), 30); }
+  else { document.body.classList.remove("open"); setTimeout(() => api() && api().resize("compact"), 330); }
+}
 
 window.exo = {
   on(kind, data) {

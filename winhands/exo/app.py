@@ -7,7 +7,7 @@ speech bubble + Pablo's voice. The window never takes the keyboard focus (unless
 import ctypes, ctypes.wintypes as wt, json, os, pathlib, sys, threading, time
 
 UI = pathlib.Path(__file__).with_name("ui") / "index.html"
-SIZE = (430, 660)
+SIZES = {"compact": (240, 360), "open": (430, 660)}  # small when idle: a translucent window repaints every pixel
 TITLE = "Exo"
 HOTKEY = "Ctrl+Alt+Space"
 _u32 = ctypes.windll.user32
@@ -184,6 +184,9 @@ def _hotkey(on_press):
 
 
 def main():
+    # Software compositing: GPU compositing of a translucent window drops a blank frame every few seconds (Exo
+    # "blinks"); measured 3 blank frames / 40 s on GPU vs 0 / 90 s in software.
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing")
     from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
     from PySide6.QtGui import QColor, QIcon
     from PySide6.QtWebChannel import QWebChannel
@@ -229,6 +232,15 @@ def main():
             if on:
                 _take_focus(int(view.winId()))
 
+        @Slot(str)
+        def resize(self, size):
+            """Grow for the conversation panel, shrink back when it closes (bottom-right corner stays put)."""
+            if size not in SIZES:
+                return
+            w, h = SIZES[size]
+            g = view.geometry()
+            view.setGeometry(g.right() - w + 1, g.bottom() - h + 1, w, h)
+
         @Slot()
         def drag(self):
             view.windowHandle().startSystemMove()
@@ -263,9 +275,9 @@ def main():
     view.setAttribute(Qt.WA_ShowWithoutActivating)
     view.page().setBackgroundColor(QColor(0, 0, 0, 0))
     view.setContextMenuPolicy(Qt.NoContextMenu)
-    view.resize(*SIZE)
+    w, h = SIZES["compact"]
     geo = app.primaryScreen().availableGeometry()
-    view.move(geo.right() - SIZE[0] - 4, geo.bottom() - SIZE[1] - 2)
+    view.setGeometry(geo.right() - w - 4, geo.bottom() - h - 2, w, h)
     view.load(QUrl.fromLocalFile(str(UI)))
     view.show()
     _no_activate(True)
