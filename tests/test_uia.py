@@ -315,3 +315,101 @@ def test_focus_accepts_hwnd_and_title_keywords():
     d.focus(title="Chrome")
     d.focus()
     assert seen == [5, 6, "Chrome", None]
+
+
+class _Win:
+    def __init__(self, h, name, cls=""):
+        self.NativeWindowHandle, self.Name, self.ClassName, self.ProcessId = h, name, cls, 1
+
+
+class _U32:
+    """Fake user32: owner 1 (Chrome) is blocked by its modal file picker 2."""
+    def __init__(self, fg=2, owner_enabled=False):
+        self.fg, self.owner_enabled = fg, owner_enabled
+
+    def GetAncestor(self, h, flag):
+        return 1 if h in (1, 2) else h
+
+    def GetForegroundWindow(self):
+        return self.fg
+
+    def IsWindowEnabled(self, h):
+        return h != 1 or self.owner_enabled
+
+
+def test_wins_lists_owned_dialogs_that_uia_nests_under_their_owner(monkeypatch):
+    from winhands import uia
+    owner, picker = _Win(1, "Chrome"), _Win(2, "Abrir", "#32770")
+
+    class Auto:
+        def GetRootControl(self):
+            return type("R", (), {"GetChildren": lambda s: [owner]})()  # UIA root: no dialog
+
+        def ControlFromHandle(self, h):
+            return {1: owner, 2: picker}[h]
+    d = object.__new__(uia.Desk)
+    d.auto, d.hidden = Auto(), set()
+    monkeypatch.setattr(uia, "_top_hwnds", lambda: [2, 1])
+    monkeypatch.setattr(uia, "_modal", lambda h: h == 2)
+    assert d._wins() == {1: owner, 2: picker}
+    d.hidden = {2}
+    assert d._wins() == {1: owner}                                     # own overlay windows stay out
+
+
+def test_after_action_targets_a_new_file_picker_with_its_full_tree(monkeypatch):
+    from winhands import uia
+    owner, picker = _Win(1, "Chrome"), _Win(2, "Abrir", "#32770")
+    d = object.__new__(uia.Desk)
+    d.win, d.before, d.canvas = owner, {1}, {}
+    d._wins = lambda: {1: owner, 2: picker}
+    d._alive = lambda w: True
+    d.observe = lambda *a, **k: {"text": f'window "{d.win.Name}"\n1 edit "Nombre de archivo"'}
+    monkeypatch.setattr(uia, "_u32", _U32())
+    monkeypatch.setattr(uia, "_modal", lambda h: h == 2)
+    monkeypatch.setattr(uia.time, "sleep", lambda s: None)
+    out = d.after_action()
+    assert d.win is picker and 'window "Abrir"' in out and "Nombre de archivo" in out
+
+
+def test_after_action_keeps_diffing_owned_menus(monkeypatch):
+    from winhands import uia
+    owner, menu = _Win(1, "Chrome"), _Win(2, "", "#32768")
+    d = object.__new__(uia.Desk)
+    d.win, d.before, d.canvas = owner, {1}, {}
+    d._wins = lambda: {1: owner, 2: menu}
+    d._alive = lambda w: True
+    d.observe = lambda target=None, mode="tree": {"text": f"mode={mode}"}
+    monkeypatch.setattr(uia, "_u32", _U32(fg=1, owner_enabled=True))
+    monkeypatch.setattr(uia, "_modal", lambda h: False)
+    monkeypatch.setattr(uia.time, "sleep", lambda s: None)
+    assert d.after_action() == "mode=diff" and d.win is owner
+
+
+def test_resolve_redirects_a_blocked_target_to_its_modal_dialog(monkeypatch):
+    from winhands import uia
+    owner, picker = _Win(1, "Chrome"), _Win(2, "Abrir", "#32770")
+    d = object.__new__(uia.Desk)
+    d.win, d.deny = owner, []
+    d._alive = lambda w: True
+    d.auto = type("A", (), {"ControlFromHandle": lambda s, h: {1: owner, 2: picker}[h]})()
+    monkeypatch.setattr(uia, "_dialog_of", lambda h: 2 if h == 1 else None)
+    monkeypatch.setattr(uia, "_u32", _U32())
+    assert d.resolve() is picker                       # the picker opened late: still found
+    assert d.resolve(1) is picker                      # an explicit owner target is blocked too
+    monkeypatch.setattr(uia, "_u32", _U32(owner_enabled=True))
+    assert d.resolve() is owner                        # modeless dialogs (Find) never hijack
+
+
+def test_foreground_info_reports_a_targeted_dialog_itself(monkeypatch):
+    from winhands import uia
+    picker = _Win(2, "Abrir", "#32770")
+    d = object.__new__(uia.Desk)
+    d.win, d._alive = picker, (lambda w: True)
+    monkeypatch.setattr(uia, "_u32", _U32(fg=2))
+    monkeypatch.setattr(uia, "_title", lambda h: {1: "Chrome", 2: "Abrir"}[h], raising=False)
+    monkeypatch.setattr(uia, "_pid", lambda h: 1, raising=False)
+    monkeypatch.setattr(uia, "_exe", lambda pid: "chrome.exe")
+    info = d.foreground_info()
+    assert info["hwnd"] == 2 and "MISMATCH" not in uia.route_line(d._info(picker), info)
+    d.win = _Win(1, "Chrome")                       # targeting the owner: the dialog still counts as it
+    assert d.foreground_info()["hwnd"] == 1

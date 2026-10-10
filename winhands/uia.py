@@ -258,20 +258,50 @@ P_VALUE, P_READONLY, P_EXPAND, P_SELECTED, P_TOGGLE = 30045, 30046, 30070, 30079
 _u32 = ctypes.windll.user32
 
 
-def _enum_titles(t):
-    """Visible top-level hwnds whose title contains t (Win32 EnumWindows)."""
+def _top_hwnds():
+    """Visible top-level hwnds (Win32 EnumWindows, front to back)."""
     out = []
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
     def cb(h, _):
         if _u32.IsWindowVisible(h):
-            buf = ctypes.create_unicode_buffer(512)
-            _u32.GetWindowTextW(h, buf, 512)
-            if t in buf.value.lower():
-                out.append(h)
+            out.append(h)
         return True
     _u32.EnumWindows(cb, None)
     return out
+
+
+def _title(h):
+    buf = ctypes.create_unicode_buffer(512)
+    _u32.GetWindowTextW(h, buf, 512)
+    return buf.value
+
+
+def _pid(h):
+    pid = ctypes.c_ulong()
+    _u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+    return pid.value
+
+
+def _enum_titles(t):
+    """Visible top-level hwnds whose title contains t."""
+    return [h for h in _top_hwnds() if t in _title(h).lower()]
+
+
+def _modal(h):
+    """Owned dialog: file picker, message box, or any window that blocks its owner. UIA nests these
+    under their owner instead of listing them at the root, so they are found through Win32."""
+    owner = _u32.GetWindow(h, 4)  # GW_OWNER
+    if not owner:
+        return False
+    buf = ctypes.create_unicode_buffer(64)
+    _u32.GetClassNameW(h, buf, 64)
+    return buf.value == "#32770" or not _u32.IsWindowEnabled(owner)
+
+
+def _dialog_of(h):
+    """Frontmost dialog owned by h, if any."""
+    return next((x for x in _top_hwnds() if x != h and _u32.GetWindow(x, 4) == h and _modal(x)), None)
 
 
 def _exe(pid):
@@ -322,6 +352,11 @@ class Desk:
                 continue
             if h and h not in self.hidden:
                 out[h] = w
+        for h in _top_hwnds():  # owned dialogs (file pickers, message boxes): UIA hides them under the owner
+            if h not in out and h not in self.hidden and _modal(h):
+                w = self.auto.ControlFromHandle(h)
+                if w:
+                    out[h] = w
         return out
 
     @staticmethod
@@ -362,6 +397,13 @@ class Desk:
             w = self.win
         else:
             w = self.auto.GetForegroundControl().GetTopLevelControl()
+        for _ in range(4):  # a modal dialog disables its owner: act on the dialog (pickers can nest a confirm box)
+            if _u32.IsWindowEnabled(w.NativeWindowHandle):
+                break
+            dlg = _dialog_of(w.NativeWindowHandle)
+            if not dlg:
+                break
+            w = self.auto.ControlFromHandle(dlg)
         self._guard(w)
         return w
 
@@ -374,13 +416,12 @@ class Desk:
 
     def foreground_info(self):
         """Top-level window that has the keyboard focus right now (where keys really land)."""
-        h = _u32.GetAncestor(_u32.GetForegroundWindow(), 3)  # GA_ROOT: a dialog counts as its owner
+        fg = _u32.GetForegroundWindow()
+        targeted = self._alive(self.win) and self.win.NativeWindowHandle == fg
+        h = fg if targeted else _u32.GetAncestor(fg, 3)  # GA_ROOTOWNER: an untargeted dialog counts as its owner
         if not h:
             return None
-        buf, pid = ctypes.create_unicode_buffer(512), ctypes.c_ulong()
-        _u32.GetWindowTextW(h, buf, 512)
-        _u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
-        return {"title": buf.value, "hwnd": h, "exe": _exe(pid.value)}
+        return {"title": _title(h), "hwnd": h, "exe": _exe(_pid(h))}
 
     def route_note(self, since):
         """route_line, but only when this run injected real input (inputs.last >= since)."""
@@ -416,7 +457,8 @@ class Desk:
         """Owned dialogs and same-process menus shown as separate top-level windows."""
         h, pid, out = w.NativeWindowHandle, w.ProcessId, []
         for ph, p in self._wins().items():
-            if ph != h and (_u32.GetAncestor(ph, 3) == h or (p.ProcessId == pid and p.ClassName == "#32768")):
+            if ph != h and not _modal(ph) and (_u32.GetAncestor(ph, 3) == h or
+                                               (p.ProcessId == pid and p.ClassName == "#32768")):
                 out.append(p)
         return out
 
@@ -499,7 +541,8 @@ class Desk:
         time.sleep(0.05 if fast else 0.12)
         new = [w for h, w in self._wins().items() if h not in self.before]
         if new and self._alive(self.win):
-            owned = [w for w in new if _u32.GetAncestor(w.NativeWindowHandle, 3) == self.win.NativeWindowHandle]
+            owned = [w for w in new if _u32.GetAncestor(w.NativeWindowHandle, 3) == self.win.NativeWindowHandle
+                     and not _modal(w.NativeWindowHandle)]  # menus get diffed; a dialog becomes the target
             if len(owned) < len(new):
                 fg = _u32.GetForegroundWindow()
                 self.win = next((w for w in new if w.NativeWindowHandle == fg), new[-1])

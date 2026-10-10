@@ -101,5 +101,13 @@ show()                                    # attach a screenshot to this result
 - Web page in Chrome: `observe(target=<hwnd>)` (the page tree only comes for an explicit target); hyperlinks carry their
   URL in `Value`; `find(role="hyperlink", name="...")` → `click(id)`. Lists lazy-load: `wheel(-5)` (negative = down),
   then observe again. Prefer the site's own search box (click it, `type("...", enter=True)`) over scrolling.
+- File picker ("Abrir"/"Open"/"Guardar como", e.g. a web page's upload button): it is a modal dialog that can take ~1 s
+  to appear, so if the `--- state ---` after the click shows no dialog, `observe()` again before concluding anything.
+  While it is open, `observe()`/`find()` target the dialog automatically (`windows()` lists it). Never paste into the
+  page meanwhile (the dialog blocks it). Use the file-name edit WITH its colon (es `Nombre:`, en `File name:`; the
+  list's group headers are also edits named "Nombre") and press Enter (two buttons share the name "Abrir"; one is the
+  history dropdown). Folder first (Enter navigates), then the file names (several: `"a.png" "b.png"`):
+  `i = find(role="edit", name="Nombre:", raw=True)[0]; type(r"C:\path\folder", id=i); key("enter")` →
+  `type('"a.png" "b.png"', id=i); key("enter")` → "target window closed" in the state = files accepted.
 - Multi-monitor: screen coords can be negative (a monitor left of the primary, e.g. `[-1929,-9,9,1029]`); `region`,
   `click_at` and shots use those virtual-desktop coords (a shot reports its screen box).
