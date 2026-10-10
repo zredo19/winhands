@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Exo</title>
+<style>
+  :root {
+    --green-50:#f5fae9; --green-100:#e8f4cc; --green-300:#b6dc6f; --green-400:#a0d152; --green-500:#8dc63f;
+    --green-600:#72a82c; --green-700:#588424; --forest-950:#0b1c16; --forest-900:#10281f; --forest-800:#16362a;
+    --forest-700:#1f4938; --neutral-50:#fafbf8; --danger:#d1442e;
+    --ease:cubic-bezier(.22,1,.36,1);
+    --sans:"Hanken Grotesk", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    --mono:"JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing:border-box; }
+  /* the window is translucent: fully transparent pixels are click-through */
+  html, body { margin:0; height:100%; background:transparent; overflow:hidden; font-family:var(--sans);
+               user-select:none; -webkit-user-select:none; }
+  #root { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:flex-end;
+          align-items:flex-end; padding:8px; gap:8px; }
+
+  /* conversation panel */
+  #panel { width:100%; max-height:0; opacity:0; transform:translateY(8px) scale(.98); transform-origin:bottom right;
+           transition:all .32s var(--ease); background:rgba(11,28,22,.92); border:1px solid rgba(160,209,82,.28);
+           border-radius:16px; box-shadow:0 18px 40px rgba(0,0,0,.35); display:flex; flex-direction:column;
+           overflow:hidden; backdrop-filter:blur(12px); }
+  body.open #panel { max-height:330px; opacity:1; transform:none; }
+  #panel header { display:flex; align-items:center; gap:8px; padding:10px 12px; color:var(--green-100);
+                  font:600 12px var(--mono); letter-spacing:.12em; border-bottom:1px solid rgba(160,209,82,.15); }
+  #panel header .dot { width:8px; height:8px; border-radius:50%; background:var(--green-400);
+                       box-shadow:0 0 10px var(--green-400); }
+  #panel header .sp { flex:1; }
+  .ib { width:26px; height:26px; border-radius:8px; border:0; background:transparent; color:var(--green-100);
+        cursor:pointer; display:grid; place-items:center; opacity:.75; transition:all .2s var(--ease); }
+  .ib:hover { opacity:1; background:rgba(160,209,82,.15); }
+  .ib svg { width:15px; height:15px; }
+  #log { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; min-height:120px;
+         user-select:text; -webkit-user-select:text; }
+  #log::-webkit-scrollbar { width:6px; } #log::-webkit-scrollbar-thumb { background:var(--forest-700); border-radius:3px; }
+  .msg { max-width:88%; padding:8px 11px; border-radius:12px; font-size:13.5px; line-height:1.4; animation:pop .32s var(--ease); }
+  .msg.user { align-self:flex-end; background:var(--green-500); color:var(--forest-950); border-bottom-right-radius:4px; }
+  .msg.exo { align-self:flex-start; background:var(--forest-800); color:var(--neutral-50); border-bottom-left-radius:4px;
+             border:1px solid rgba(160,209,82,.18); }
+  .msg.exo.err { border-color:var(--danger); }
+  .msg.live::after { content:"▍"; color:var(--green-400); animation:blink 1s steps(1) infinite; }
+  #compose { display:flex; gap:6px; padding:8px; border-top:1px solid rgba(160,209,82,.15); }
+  #compose input { flex:1; background:var(--forest-900); border:1px solid rgba(160,209,82,.2); border-radius:10px;
+                   color:var(--neutral-50); padding:8px 10px; font:13px var(--sans); outline:none; }
+  #compose input:focus { border-color:var(--green-500); }
+
+  /* speech bubble (compact mode) */
+  #bubble { position:absolute; right:12px; bottom:250px; max-width:210px; padding:8px 11px; border-radius:12px;
+            background:rgba(11,28,22,.94); color:var(--neutral-50); font-size:12.5px; line-height:1.35;
+            border:1px solid rgba(160,209,82,.3); opacity:0; transform:translateY(6px); pointer-events:none;
+            transition:all .32s var(--ease); }
+  #bubble.show { opacity:1; transform:none; }
+  body.open #bubble { display:none; }
+
+  /* dock: mascot + controls */
+  #dock { position:relative; width:214px; height:236px; display:flex; flex-direction:column; align-items:center;
+          justify-content:flex-end; }
+  #mascot { width:200px; height:184px; cursor:pointer; position:relative; display:grid; place-items:center;
+            filter:drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+  #mascot > * { max-width:100%; max-height:100%; }
+  #bar { display:flex; align-items:center; gap:6px; padding:5px; margin-top:4px; border-radius:999px;
+         background:rgba(11,28,22,.88); border:1px solid rgba(160,209,82,.25); }
+  #mic { width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center;
+         background:var(--green-500); color:var(--forest-950); position:relative; transition:all .2s var(--ease); }
+  #mic:hover { background:var(--green-400); transform:scale(1.05); }
+  #mic svg { width:18px; height:18px; }
+  #mic::before { content:""; position:absolute; inset:-5px; border-radius:50%; border:2px solid var(--green-400);
+                 opacity:0; transform:scale(calc(1 + var(--lv, 0) * .6)); transition:transform .1s linear; }
+  body[data-state=listening] #mic { background:var(--danger); color:#fff; }
+  body[data-state=listening] #mic::before { opacity:.8; }
+  body[data-state=thinking] #mic, body[data-state=working] #mic { background:var(--forest-700); color:var(--green-300); }
+  body[data-state=thinking] #mic svg, body[data-state=working] #mic svg { animation:spin 1.2s linear infinite; }
+  #status { font:600 10px var(--mono); letter-spacing:.14em; color:var(--green-300); text-transform:uppercase;
+            min-width:74px; text-align:center; }
+
+  @keyframes pop { from { opacity:0; transform:translateY(6px) scale(.98); } }
+  @keyframes blink { 50% { opacity:0; } }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body data-state="idle">
+<div id="root">
+  <section id="panel">
+    <header><span class="dot"></span>EXO<span class="sp"></span>
+      <button class="ib" id="voice" title="Voice on/off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+      <button class="ib" id="new" title="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="ib" id="min" title="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button>
+      <button class="ib" id="close" title="Quit Exo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div id="log"></div>
+    <form id="compose"><input id="text" placeholder="Write to Exo…" autocomplete="off"></form>
+  </section>
+  <div id="bubble"></div>
+  <div id="dock">
+    <div id="mascot" title="Click to talk (Ctrl+Alt+Space)"></div>
+    <div id="bar">
+      <button class="ib" id="chat" title="Conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button id="mic" title="Talk (Ctrl+Alt+Space)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
+      <span id="status">idle</span>
+    </div>
+  </div>
+</div>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="mascot.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let bridge = null;
+const api = () => bridge;
+const LABEL = { idle:"ready", listening:"listening", thinking:"thinking", working:"working", speaking:"speaking",
+                success:"done", error:"error", sleeping:"asleep" };
+let live = null, voiceOn = true, sleepTimer = null, bubbleTimer = null;
+
+function setState(s) {
+  document.body.dataset.state = s;
+  $("#status").textContent = LABEL[s] || s;
+  window.ExoMascot && ExoMascot.setState(s);
+  clearTimeout(sleepTimer);
+  if (s === "idle") sleepTimer = setTimeout(() => setState("sleeping"), 5 * 60 * 1000);
+}
+function add(who, text, cls = "") {
+  const d = document.createElement("div");
+  d.className = `msg ${who} ${cls}`; d.textContent = text;
+  $("#log").appendChild(d); $("#log").scrollTop = 1e9;
+  return d;
+}
+function bubble(text) {
+  const b = $("#bubble"); b.textContent = text; b.classList.add("show");
+  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove("show"), 9000);
+}
+function setOpen(open) { document.body.classList.toggle("open", open); }
+
+window.exo = {
+  on(kind, data) {
+    if (kind === "state") setState(data);
+    else if (kind === "level") $("#mic").style.setProperty("--lv", data), window.ExoMascot && ExoMascot.setLevel && ExoMascot.setLevel(data);
+    else if (kind === "bubble") {
+      if (data.who === "exo" && live) { live.remove(); live = null; }
+      add(data.who, data.text, data.ok === false ? "err" : "");
+      if (data.who === "exo") bubble(data.text);
+    }
+    else if (kind === "stream") { if (!live) live = add("exo", "", "live"); live.textContent = data; $("#log").scrollTop = 1e9; }
+    else if (kind === "reset") { $("#log").innerHTML = ""; live = null; }
+    else if (kind === "hello") add("exo", `Hi! Click me or press ${data.hotkey} and talk.`);
+  }
+};
+
+function talk() { if (document.body.dataset.state === "sleeping") setState("idle"); api() && api().toggle(); }
+$("#mic").onclick = talk;
+// the mascot: click = talk, drag = move the window
+let down = null;
+$("#mascot").onmousedown = e => { if (e.button === 0) down = [e.screenX, e.screenY]; };
+window.addEventListener("mousemove", e => {
+  if (down && Math.hypot(e.screenX - down[0], e.screenY - down[1]) > 5) { down = null; api() && api().drag(); }
+});
+window.addEventListener("mouseup", e => { if (down) { down = null; talk(); } });
+$("#text").onfocus = () => api() && api().keyboard(true);
+$("#text").onblur = () => api() && api().keyboard(false);
+$("#chat").onclick = () => setOpen(!document.body.classList.contains("open"));
+$("#min").onclick = () => setOpen(false);
+$("#new").onclick = () => api() && api().reset();
+$("#close").onclick = () => api() && api().quit();
+$("#voice").onclick = () => { voiceOn = !voiceOn; $("#voice").style.opacity = voiceOn ? "" : ".35"; api() && api().set_voice(voiceOn); };
+$("#compose").onsubmit = e => { e.preventDefault(); const t = $("#text").value; $("#text").value = ""; api() && api().send_text(t); };
+new QWebChannel(qt.webChannelTransport, ch => { bridge = ch.objects.bridge; bridge.ready(); });
+</script>
+</body>
+</html>
