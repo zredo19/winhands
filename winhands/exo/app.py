@@ -13,6 +13,23 @@ HOTKEY = "Ctrl+Alt+Space"
 _u32 = ctypes.windll.user32
 
 
+def log(line):
+    from .brain import HOME
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+        with open(HOME / "exo.log", "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + line + "\n")
+    except OSError:
+        pass
+
+
+def single_instance():
+    """False when another Exo is already running (named mutex lives as long as this process)."""
+    global _mutex
+    _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\ExoVoiceWidget")
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
 def foreground():
     """(title, exe) of the window the user was using when they called Exo (context for "this window")."""
     from ..uia import _exe, _pid, _title
@@ -110,6 +127,8 @@ class Exo:
 
     def _on_brain(self, kind, data):
         from .brain import spoken
+        if kind in ("log", "exit", "ready", "tool", "done"):
+            log(f"brain {kind}: {str(data)[:500]}")
         if kind == "delta":
             self.reply += data
             self.emit("stream", self.reply)
@@ -172,6 +191,9 @@ def main():
     from PySide6.QtWebEngineWidgets import QWebEngineView
     from PySide6.QtWidgets import QApplication
 
+    if not single_instance():
+        return
+    log("start")
     app = QApplication(sys.argv)
     app.setApplicationName("Exo")
     view = QWebEngineView()
