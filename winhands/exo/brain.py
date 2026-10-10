@@ -25,6 +25,35 @@ language-style, memory (Engram, Obsidian), delegation, review or orchestration i
 """
 
 
+MODELS = ("sonnet", "opus", "haiku")  # Claude Code aliases: always the latest of each family
+DEFAULTS = {"model": "sonnet", "voice": True}
+
+
+def _clean(data):
+    """Keep only valid choices; anything missing or unknown falls back to DEFAULTS."""
+    out = dict(DEFAULTS)
+    if isinstance(data, dict):
+        if data.get("model") in MODELS:
+            out["model"] = data["model"]
+        if isinstance(data.get("voice"), bool):
+            out["voice"] = data["voice"]
+    return out
+
+
+def load_settings(path):
+    """The user's choices (model, voice), surviving a missing or broken file."""
+    try:
+        return _clean(json.loads(pathlib.Path(path).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return dict(DEFAULTS)
+
+
+def save_settings(path, settings):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_clean(settings)), encoding="utf-8")
+
+
 def skill_text():
     return resources.files("winhands").joinpath("SKILL.md").read_text(encoding="utf-8")
 
@@ -187,6 +216,14 @@ class Brain:
             self.busy = self.cancelled = False
             if proc and proc.poll() is None:
                 proc.kill()
+
+    def set_model(self, model):
+        """Switch model: restart Claude Code with --model and --resume, so the conversation continues."""
+        if model not in MODELS or model == self.model:
+            return
+        self.model = model
+        self.cancel()
+        self.start()
 
     def reset(self):
         self.cancel()

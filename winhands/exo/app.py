@@ -41,13 +41,15 @@ class Exo:
     """Glue between the page (bridge slots), the voice pipeline and Claude Code. emit() is thread-safe."""
 
     def __init__(self, emit):
-        from .brain import Brain
+        from .brain import HOME, Brain, load_settings
         from .voice import Ears, Mouth, Recorder
         self._emit = emit
-        self.brain = Brain(self._on_brain)
+        self.prefs_path = HOME / "preferences.json"
+        self.prefs = load_settings(self.prefs_path)
+        self.brain = Brain(self._on_brain, model=os.environ.get("EXO_MODEL") or self.prefs["model"])
         self.ears, self.mouth = Ears(), Mouth()
         self.rec = Recorder(on_level=lambda lv: self.emit("level", round(min(1.0, lv * 12), 3)))
-        self.state, self.listening, self.reply, self.voice_on = "idle", False, "", True
+        self.state, self.listening, self.reply, self.voice_on = "idle", False, "", self.prefs["voice"]
         self._ctx = ("", "")
         self.turn = 0  # bumped by a stop: work started before it is dropped
 
@@ -82,6 +84,26 @@ class Exo:
         self.voice_on = bool(on)
         if not on:
             self.mouth.stop()
+        self._save()
+
+    def set_model(self, model):
+        from .brain import MODELS
+        if model not in MODELS or model == self.brain.model:
+            return
+        if self.state in ("thinking", "working"):
+            self.turn += 1
+        self.brain.set_model(model)  # same conversation, new model (Claude Code restarts in the background)
+        self.set_state("idle")
+        self.emit("bubble", {"who": "exo", "text": f"Listo, ahora pienso con {model.capitalize()}."})
+        self._save()
+
+    def settings(self):
+        from .brain import MODELS
+        return {"model": self.brain.model, "voice": self.voice_on, "models": list(MODELS)}
+
+    def _save(self):
+        from .brain import save_settings
+        save_settings(self.prefs_path, {"model": self.brain.model, "voice": self.voice_on})
 
     def reset(self):
         self.brain.reset()
@@ -228,6 +250,10 @@ def main():
         def set_voice(self, on):
             self.exo.set_voice(on)
 
+        @Slot(str)
+        def set_model(self, model):
+            threading.Thread(target=self.exo.set_model, args=(model,), daemon=True).start()
+
         @Slot()
         def reset(self):
             self.exo.reset()
@@ -259,6 +285,7 @@ def main():
 
         @Slot()
         def ready(self):
+            self.exo.emit("settings", self.exo.settings())
             self.exo.emit("hello", {"hotkey": HOTKEY})
             self.exo.set_state("idle")
 

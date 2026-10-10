@@ -65,3 +65,27 @@ def test_a_replaced_process_never_reports_a_lost_connection():
     b.proc, b.busy = _Proc(), True                                    # old was killed and replaced
     b._read(old)
     assert seen == [] and b.busy
+
+
+def test_settings_round_trip_and_survive_a_broken_file(tmp_path):
+    from winhands.exo.brain import load_settings, save_settings, DEFAULTS
+    f = tmp_path / "settings.json"
+    assert load_settings(f) == DEFAULTS                                # missing file
+    save_settings(f, {"model": "opus", "voice": False})
+    assert load_settings(f) == {**DEFAULTS, "model": "opus", "voice": False}
+    f.write_text("{broken", encoding="utf-8")
+    assert load_settings(f) == DEFAULTS
+    save_settings(f, {"model": "gpt-9"})                               # unknown models are ignored
+    assert load_settings(f)["model"] == DEFAULTS["model"]
+
+
+def test_set_model_restarts_claude_on_the_same_conversation(monkeypatch):
+    from winhands.exo import brain
+    monkeypatch.setattr(brain, "_files", lambda: ("mcp.json", "prompt.md"))
+    monkeypatch.setattr(brain, "_claude", lambda: "claude")
+    b = brain.Brain(lambda *a: None, model="sonnet")
+    b.session, started = "s1", []
+    b.start = lambda: started.append(b.command())
+    b.set_model("opus")
+    cmd = started[-1]
+    assert cmd[cmd.index("--model") + 1] == "opus" and cmd[cmd.index("--resume") + 1] == "s1"

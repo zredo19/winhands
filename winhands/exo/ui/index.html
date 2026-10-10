@@ -30,6 +30,9 @@
   #panel header .dot { width:8px; height:8px; border-radius:50%; background:var(--green-400);
                        box-shadow:0 0 10px var(--green-400); }
   #panel header .sp { flex:1; }
+  #model { background:var(--forest-800); color:var(--green-100); border:1px solid rgba(160,209,82,.25);
+           border-radius:8px; font:600 11px var(--mono); padding:4px 6px; outline:none; cursor:pointer; }
+  #model:focus { border-color:var(--green-500); }
   .ib { width:26px; height:26px; border-radius:8px; border:0; background:transparent; color:var(--green-100);
         cursor:pointer; display:grid; place-items:center; opacity:.75; transition:all .2s var(--ease); }
   .ib:hover { opacity:1; background:rgba(160,209,82,.15); }
@@ -86,6 +89,7 @@
 <div id="root">
   <section id="panel">
     <header><span class="dot"></span>EXO<span class="sp"></span>
+      <select id="model" title="Claude model"></select>
       <button class="ib" id="voice" title="Voice on/off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
       <button class="ib" id="new" title="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="ib" id="min" title="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button>
@@ -149,6 +153,11 @@ window.exo = {
     else if (kind === "stream") { if (!live) live = add("exo", "", "live"); live.textContent = data; $("#log").scrollTop = 1e9; }
     else if (kind === "reset") { $("#log").innerHTML = ""; live = null; }
     else if (kind === "hello") add("exo", `Hi! Click me or press ${data.hotkey} and talk.`);
+    else if (kind === "settings") {
+      $("#model").innerHTML = data.models.map(m => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join("");
+      $("#model").value = data.model;
+      voiceOn = data.voice; $("#voice").style.opacity = voiceOn ? "" : ".35";
+    }
   }
 };
 
@@ -167,6 +176,7 @@ $("#chat").onclick = () => setOpen(!document.body.classList.contains("open"));
 $("#min").onclick = () => setOpen(false);
 $("#new").onclick = () => api() && api().reset();
 $("#close").onclick = () => api() && api().quit();
+$("#model").onchange = () => api() && api().set_model($("#model").value);
 $("#voice").onclick = () => { voiceOn = !voiceOn; $("#voice").style.opacity = voiceOn ? "" : ".35"; api() && api().set_voice(voiceOn); };
 $("#compose").onsubmit = e => { e.preventDefault(); const t = $("#text").value; $("#text").value = ""; api() && api().send_text(t); };
 new QWebChannel(qt.webChannelTransport, ch => { bridge = ch.objects.bridge; bridge.ready(); });
