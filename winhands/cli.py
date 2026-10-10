@@ -83,6 +83,36 @@ def setup(remove=False, dry_run=False, home=None, which=shutil.which, run=subpro
     return 0
 
 
+def _shell():
+    import win32com.client
+    return win32com.client.Dispatch("WScript.Shell")
+
+
+def _lnk(path, target, args, icon, workdir):
+    s = _shell().CreateShortCut(str(path))
+    s.TargetPath, s.Arguments, s.WorkingDirectory = target, args, workdir
+    s.Description = "Exo, the winhands voice assistant"
+    if pathlib.Path(icon).exists():
+        s.IconLocation = icon
+    s.Save()
+
+
+def exo_shortcuts(executable=None, folders=None, make=_lnk, out=print):
+    """Start Menu + Desktop shortcuts that open Exo with pythonw (no console window). Returns the .lnk paths."""
+    pyw = pathlib.Path(executable or sys.executable).with_name("pythonw.exe")
+    icon = str(resources.files("winhands").joinpath("exo", "ui", "icon.ico"))
+    if folders is None:
+        sh = _shell()
+        folders = [pathlib.Path(sh.SpecialFolders("Programs")), pathlib.Path(sh.SpecialFolders("Desktop"))]
+    links = []
+    for folder in folders:
+        link = pathlib.Path(folder) / "Exo.lnk"
+        make(link, target=str(pyw), args="-m winhands.exo", icon=icon, workdir=str(pathlib.Path.home()))
+        out(f"shortcut: {link}")
+        links.append(link)
+    return links
+
+
 def main(argv=None, serve=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
@@ -93,14 +123,24 @@ def main(argv=None, serve=None):
     import argparse
     p = argparse.ArgumentParser(prog="winhands", description="Computer use MCP server for Windows. Run without arguments to start it.")
     p.add_argument("--version", action="store_true", help="print the version and exit")
-    s = p.add_subparsers(dest="cmd").add_parser("setup", help="register winhands with Claude Code and install its skill")
+    sub = p.add_subparsers(dest="cmd")
+    s = sub.add_parser("setup", help="register winhands with Claude Code and install its skill")
     s.add_argument("--remove", action="store_true", help="undo setup (MCP entry and skill folder)")
     s.add_argument("--dry-run", action="store_true", help="show what would be done without changing anything")
+    e = sub.add_parser("exo", help="open Exo, the voice assistant widget (needs: pip install winhands[exo])")
+    e.add_argument("--shortcut", action="store_true", help="create Start Menu and Desktop shortcuts instead")
     a = p.parse_args(argv)
     if a.version:
         print(f"winhands {__version__}")
         return 0
     if a.cmd == "setup":
         return setup(remove=a.remove, dry_run=a.dry_run)
+    if a.cmd == "exo":
+        if a.shortcut:
+            exo_shortcuts()
+        else:
+            from .exo import app
+            app.main()
+        return 0
     p.print_help()
     return 0

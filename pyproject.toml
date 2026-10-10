@@ -44,9 +44,12 @@ winhands = "winhands.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Exo, the voice assistant widget (winhands exo): Qt WebEngine window, local Whisper, Windows voices
+exo = ["PySide6>=6.8", "faster-whisper>=1.1", "sounddevice", "winrt-Windows.Media.SpeechSynthesis"]
 
 [tool.setuptools]
-packages = ["winhands"]
+packages = ["winhands", "winhands.exo"]
 
 [tool.setuptools.package-data]
 winhands = ["SKILL.md"]
+"winhands.exo" = ["ui/*"]

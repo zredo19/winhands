@@ -195,3 +195,22 @@ def test_setup_refuses_to_register_a_throwaway_uvx_environment(tmp_path):
 def test_remove_works_even_from_a_throwaway_environment(tmp_path):
     assert cli.setup(remove=True, home=tmp_path, which=_which(), run=Run(), command=[UVX_PY, "-m", "winhands"],
                      out=lambda s: None) == 0
+
+
+def test_exo_shortcut_points_at_windowless_python(tmp_path):
+    made, out = [], []
+    links = cli.exo_shortcuts(executable=PY, folders=[tmp_path / "Start", tmp_path / "Desk"],
+                              make=lambda path, **kw: made.append((path, kw)), out=out.append)
+    assert [p.name for p, _ in made] == ["Exo.lnk", "Exo.lnk"] and links == [p for p, _ in made]
+    target = made[0][1]
+    assert target["target"].endswith("pythonw.exe") and target["args"] == "-m winhands.exo"
+    assert target["icon"].endswith("icon.ico")
+
+
+def test_main_exo_runs_the_widget_or_makes_shortcuts(monkeypatch):
+    seen = []
+    monkeypatch.setattr(cli, "exo_shortcuts", lambda **kw: seen.append("shortcut") or [])
+    import winhands.exo.app as app
+    monkeypatch.setattr(app, "main", lambda: seen.append("app"))
+    assert cli.main(["exo", "--shortcut"]) == 0 and cli.main(["exo"]) == 0
+    assert seen == ["shortcut", "app"]
