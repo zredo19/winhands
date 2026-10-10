@@ -30,7 +30,11 @@ language-style, memory (Engram, Obsidian), delegation, review or orchestration i
 """
 
 
-MODELS = ("sonnet", "opus", "haiku")  # Claude Code aliases: always the latest of each family
+MODELS = {  # picker order: fastest to most capable; "id" is what Claude Code runs
+    "haiku": {"id": "claude-haiku-5-5", "label": "Haiku 5.5", "blurb": "Fastest, for quick commands"},
+    "sonnet": {"id": "claude-sonnet-5-5", "label": "Sonnet 5.5", "blurb": "Balanced, recommended"},
+    "opus": {"id": "claude-opus-5-5", "label": "Opus 5.5", "blurb": "Most capable, slower"},
+}
 DEFAULTS = {"model": "sonnet", "voice": True}
 
 
@@ -161,7 +165,7 @@ class Brain:
                "--include-partial-messages", "--strict-mcp-config", "--mcp-config", str(mcp),
                "--settings", json.dumps({"disableAllHooks": True}),
                "--allowedTools", "mcp__winhands__observe mcp__winhands__run",
-               "--system-prompt-file", str(prompt), "--model", self.model]
+               "--system-prompt-file", str(prompt), "--model", MODELS.get(self.model, {}).get("id", self.model)]
         if self.session:
             cmd += ["--resume", self.session]
         return cmd

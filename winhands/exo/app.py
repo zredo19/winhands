@@ -95,12 +95,13 @@ class Exo:
             self.turn += 1
         self.brain.set_model(model)  # same conversation, new model (Claude Code restarts in the background)
         self.set_state("idle")
-        self.emit("bubble", {"who": "exo", "text": f"Listo, ahora pienso con {model.capitalize()}."})
+        self.emit("bubble", {"who": "exo", "text": f"Listo, ahora pienso con {MODELS[model]['label']}."})
         self._save()
 
     def settings(self):
         from .brain import MODELS
-        return {"model": self.brain.model, "voice": self.voice_on, "models": list(MODELS)}
+        return {"model": self.brain.model, "voice": self.voice_on,
+                "models": [{"key": k, **v} for k, v in MODELS.items()]}
 
     def _save(self):
         from .brain import save_settings

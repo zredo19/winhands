@@ -30,9 +30,29 @@
   #panel header .dot { width:8px; height:8px; border-radius:50%; background:var(--green-400);
                        box-shadow:0 0 10px var(--green-400); }
   #panel header .sp { flex:1; }
-  #model { background:var(--forest-800); color:var(--green-100); border:1px solid rgba(160,209,82,.25);
-           border-radius:8px; font:600 11px var(--mono); padding:4px 6px; outline:none; cursor:pointer; }
-  #model:focus { border-color:var(--green-500); }
+  /* model picker: a pill that opens a small card menu */
+  #picker { position:relative; }
+  #pick { display:flex; align-items:center; gap:6px; height:26px; padding:0 8px 0 10px; border-radius:999px;
+          border:1px solid rgba(160,209,82,.35); background:linear-gradient(180deg, rgba(141,198,63,.16), rgba(141,198,63,.06));
+          color:var(--green-100); font:600 11px var(--mono); letter-spacing:.04em; cursor:pointer;
+          transition:all .2s var(--ease); }
+  #pick:hover { border-color:var(--green-400); background:rgba(141,198,63,.22); }
+  #pick .chev { width:12px; height:12px; transition:transform .2s var(--ease); }
+  #picker.open #pick .chev { transform:rotate(180deg); }
+  #menu { position:absolute; top:32px; right:0; width:228px; padding:6px; border-radius:14px; z-index:5;
+          background:rgba(11,28,22,.99); border:1px solid rgba(160,209,82,.3); box-shadow:0 14px 34px rgba(0,0,0,.45);
+          opacity:0; transform:translateY(-4px) scale(.98); transform-origin:top right; pointer-events:none;
+          transition:all .2s var(--ease); }
+  #picker.open #menu { opacity:1; transform:none; pointer-events:auto; }
+  .opt { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; cursor:pointer;
+         transition:background .15s var(--ease); }
+  .opt:hover { background:rgba(141,198,63,.12); }
+  .opt .t { flex:1; display:flex; flex-direction:column; gap:2px; }
+  .opt .n { font:600 13px var(--sans); color:var(--neutral-50); letter-spacing:0; }
+  .opt .b { font:500 11px var(--sans); color:var(--green-300); opacity:.8; letter-spacing:0; }
+  .opt .ck { width:16px; height:16px; color:var(--green-400); opacity:0; }
+  .opt.on { background:rgba(141,198,63,.16); }
+  .opt.on .ck { opacity:1; }
   .ib { width:26px; height:26px; border-radius:8px; border:0; background:transparent; color:var(--green-100);
         cursor:pointer; display:grid; place-items:center; opacity:.75; transition:all .2s var(--ease); }
   .ib:hover { opacity:1; background:rgba(160,209,82,.15); }
@@ -89,7 +109,11 @@
 <div id="root">
   <section id="panel">
     <header><span class="dot"></span>EXO<span class="sp"></span>
-      <select id="model" title="Claude model"></select>
+      <div id="picker">
+        <button id="pick" title="Claude model"><span id="pickname">…</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div id="menu"></div>
+      </div>
       <button class="ib" id="voice" title="Voice on/off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
       <button class="ib" id="new" title="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="ib" id="min" title="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button>
@@ -154,8 +178,7 @@ window.exo = {
     else if (kind === "reset") { $("#log").innerHTML = ""; live = null; }
     else if (kind === "hello") add("exo", `Hi! Click me or press ${data.hotkey} and talk.`);
     else if (kind === "settings") {
-      $("#model").innerHTML = data.models.map(m => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join("");
-      $("#model").value = data.model;
+      models = data.models; renderPicker(data.model);
       voiceOn = data.voice; $("#voice").style.opacity = voiceOn ? "" : ".35";
     }
   }
@@ -176,7 +199,20 @@ $("#chat").onclick = () => setOpen(!document.body.classList.contains("open"));
 $("#min").onclick = () => setOpen(false);
 $("#new").onclick = () => api() && api().reset();
 $("#close").onclick = () => api() && api().quit();
-$("#model").onchange = () => api() && api().set_model($("#model").value);
+let models = [];
+const CHECK = '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10"/></svg>';
+function renderPicker(current) {
+  const m = models.find(x => x.key === current) || models[0];
+  $("#pickname").textContent = m ? m.label : "";
+  $("#menu").innerHTML = models.map(x => `<div class="opt${x.key === current ? " on" : ""}" data-k="${x.key}">
+    <div class="t"><span class="n">${x.label}</span><span class="b">${x.blurb}</span></div>${CHECK}</div>`).join("");
+  $("#menu").querySelectorAll(".opt").forEach(o => o.onclick = e => {
+    e.stopPropagation(); $("#picker").classList.remove("open");
+    if (o.dataset.k !== current) { renderPicker(o.dataset.k); api() && api().set_model(o.dataset.k); }
+  });
+}
+$("#pick").onclick = e => { e.stopPropagation(); $("#picker").classList.toggle("open"); };
+window.addEventListener("click", () => $("#picker").classList.remove("open"));
 $("#voice").onclick = () => { voiceOn = !voiceOn; $("#voice").style.opacity = voiceOn ? "" : ".35"; api() && api().set_voice(voiceOn); };
 $("#compose").onsubmit = e => { e.preventDefault(); const t = $("#text").value; $("#text").value = ""; api() && api().send_text(t); };
 new QWebChannel(qt.webChannelTransport, ch => { bridge = ch.objects.bridge; bridge.ready(); });

@@ -88,7 +88,14 @@ def test_set_model_restarts_claude_on_the_same_conversation(monkeypatch):
     b.start = lambda: started.append(b.command())
     b.set_model("opus")
     cmd = started[-1]
-    assert cmd[cmd.index("--model") + 1] == "opus" and cmd[cmd.index("--resume") + 1] == "s1"
+    assert cmd[cmd.index("--model") + 1] == "claude-opus-5-5" and cmd[cmd.index("--resume") + 1] == "s1"
+
+
+def test_models_have_an_exact_id_and_a_versioned_label():
+    from winhands.exo.brain import MODELS
+    assert list(MODELS) == ["haiku", "sonnet", "opus"]                 # fastest to most capable
+    assert MODELS["sonnet"]["id"] == "claude-sonnet-5-5" and MODELS["sonnet"]["label"] == "Sonnet 5.5"
+    assert all(m["id"].startswith("claude-") and m["blurb"] for m in MODELS.values())
 
 
 def test_first_sentence_is_found_as_soon_as_it_is_complete():
