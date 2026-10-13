@@ -38,3 +38,17 @@ def test_sentences_split_a_reply_so_speech_can_start_early():
     assert sentences("  ") == []
     long = "uno, " * 60 + "fin."                                          # no full stop for a long stretch
     assert all(len(c) <= 220 for c in sentences(long)) and "".join(sentences(long)).replace(" ", "") == long.replace(" ", "")
+
+
+def test_ears_run_whisper_in_a_child_process_that_close_ends():
+    import numpy as np
+    from winhands.exo.voice import Ears
+    fake = [sys.executable, "-c",
+            "from winhands.exo.voice import serve; serve(lambda a: f'{len(a)} muestras {a[1]:.1f} ñ', 'test')"]
+    ears = Ears(cmd=fake)
+    assert ears.transcribe(np.array([0, .5, 0], np.float32)) == "3 muestras 0.5 ñ" and ears.device == "test"
+    proc = ears.proc
+    ears.close()                                                   # its memory (CUDA runtime included) goes back
+    assert ears.proc is None and proc.wait(5) is not None
+    assert ears.transcribe(np.zeros(5, np.float32)) == "5 muestras 0.0 ñ"   # starts again on demand
+    ears.close()

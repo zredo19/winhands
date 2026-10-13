@@ -1,6 +1,6 @@
 """Exo's ears and voice: microphone capture with automatic end of speech, local Whisper
 speech-to-text (faster-whisper, offline) and the Windows "Pablo" voice (WinRT, offline)."""
-import asyncio, os, threading, time, wave
+import asyncio, os, sys, threading, time, wave
 
 import numpy as np
 
@@ -96,33 +96,77 @@ class Recorder:
         return audio.astype(np.float32)
 
 
+def whisper(name=None):
+    """-> (transcribe(audio) -> text, device). NVIDIA GPU: large-v3-turbo (~1.8 s per phrase on a GTX 1650 Ti);
+    otherwise small on the CPU (~3 s). The first run downloads the model."""
+    from faster_whisper import WhisperModel
+    try:
+        if not ctranslate2 or not ctranslate2.get_cuda_device_count():
+            raise RuntimeError("no CUDA device")
+        model = WhisperModel(name or "large-v3-turbo", device="cuda", compute_type="int8_float16")
+        list(model.transcribe(np.zeros(RATE, np.float32), language="es")[0])  # warm up: segments are lazy
+        device = "cuda"
+    except Exception:
+        model, device = WhisperModel(name or "small", device="cpu", compute_type="int8"), "cpu"
+
+    def transcribe(audio):
+        segs, _ = model.transcribe(audio, language="es", beam_size=5, vad_filter=True,
+                                   initial_prompt=VOCAB, condition_on_previous_text=False)
+        return " ".join(s.text for s in segs).strip()
+    return transcribe, device
+
+
+def serve(transcribe, device):
+    """The Whisper child process: a line with the sample count, then float32 samples in; one JSON line out
+    (ASCII-escaped: a pipe's stdout is in the ANSI code page, so "mándale" would not read back as UTF-8)."""
+    import json
+    inp, out = sys.stdin.buffer, sys.stdout
+    print(json.dumps({"device": device}), file=out, flush=True)
+    for line in iter(inp.readline, b""):
+        audio = np.frombuffer(inp.read(int(line) * 4), "<f4")
+        print(json.dumps({"text": transcribe(audio)}), file=out, flush=True)
+
+
 class Ears:
-    """Whisper, loaded once in the background (the first run downloads the model). NVIDIA GPU: large-v3-turbo
-    (~1.8 s per phrase on a GTX 1650 Ti); otherwise small on the CPU (~3 s). EXO_WHISPER overrides the model."""
+    """Whisper in a child process, started on demand. close() gives all its memory back: a CUDA runtime stays
+    resident (~500 MB) in the process that loaded it, even after the model is dropped. EXO_WHISPER picks the model."""
 
-    def __init__(self, model=None):
-        self.name = model or os.environ.get("EXO_WHISPER")
-        self.model, self.ready, self.device = None, threading.Event(), None
-        threading.Thread(target=self._load, daemon=True).start()
+    def __init__(self, model=None, cmd=None):
+        from .brain import _python
+        name = model or os.environ.get("EXO_WHISPER")
+        self.cmd = cmd or [_python(), "-m", "winhands.exo.voice", "ears"] + ([name] if name else [])
+        self.proc, self.device, self.lock = None, None, threading.Lock()
 
-    def _load(self):
-        from faster_whisper import WhisperModel
-        try:
-            if not ctranslate2 or not ctranslate2.get_cuda_device_count():
-                raise RuntimeError("no CUDA device")
-            self.model = WhisperModel(self.name or "large-v3-turbo", device="cuda", compute_type="int8_float16")
-            self.model.transcribe(np.zeros(RATE, np.float32), language="es")  # warm up (needs cuBLAS / cuDNN)
-            self.device = "cuda"
-        except Exception:
-            self.model = WhisperModel(self.name or "small", device="cpu", compute_type="int8")
-            self.device = "cpu"
-        self.ready.set()
+    def start(self):
+        """Load Whisper in the background (no-op when it is already up)."""
+        import subprocess
+        with self.lock:
+            if self.proc is None or self.proc.poll() is not None:
+                self.proc = subprocess.Popen(self.cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                             stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+            return self.proc
 
     def transcribe(self, audio):
-        self.ready.wait()
-        segs, _ = self.model.transcribe(audio, language="es", beam_size=5, vad_filter=True,
-                                        initial_prompt=VOCAB, condition_on_previous_text=False)
-        return " ".join(s.text for s in segs).strip()
+        import json
+        proc = self.start()
+        audio = np.ascontiguousarray(audio, "<f4")
+        proc.stdin.write(b"%d\n" % len(audio) + audio.tobytes())
+        proc.stdin.flush()
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except ValueError:  # a library talking on stdout
+                continue
+            self.device = msg.get("device", self.device)
+            if "text" in msg:
+                return msg["text"]
+        raise RuntimeError("Whisper stopped")
+
+    def close(self):
+        with self.lock:
+            proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.kill()
 
 
 VOICES = {  # key -> (engine, engine voice, label); Kokoro voices sound human, "pablo" is the built-in Windows voice
@@ -132,7 +176,7 @@ VOICES = {  # key -> (engine, engine voice, label); Kokoro voices sound human, "
     "pablo": ("windows", "Pablo", "Pablo (Windows)"),
 }
 KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
-KOKORO_FILES = ("kokoro-v1.0.onnx", "voices-v1.0.bin")
+KOKORO_FILES = ("kokoro-v1.0.int8.onnx", "voices-v1.0.bin")  # int8: ~230 MB less RAM than fp32, and faster
 
 
 def sentences(text, limit=220):
@@ -157,7 +201,7 @@ def kokoro_dir():
 
 
 def ensure_kokoro():
-    """Download the Kokoro model once (~340 MB) into ~/.exo/models/kokoro. Returns the folder or None."""
+    """Download the Kokoro model once (~115 MB) into ~/.exo/models/kokoro. Returns the folder or None."""
     import urllib.request
     d = kokoro_dir()
     try:
@@ -173,31 +217,44 @@ def ensure_kokoro():
 
 class Mouth:
     """Text to speech, sentence by sentence: Kokoro (local, human-sounding) or the Windows voice as a fallback.
-    say() returns at once; busy() tells whether it is still talking; stop() cuts it."""
+    say() returns at once; busy() tells whether it is still talking; stop() cuts it. Kokoro loads on first use
+    (or warm()) and unload() gives its memory back."""
 
     def __init__(self, voice=None, speed=1.05):
         self.voice = voice or os.environ.get("EXO_VOICE", "alex")
         self.speed, self.gen, self._thread, self._kokoro = speed, 0, None, None
         self._lock = threading.Lock()
+
+    def warm(self):
         threading.Thread(target=self._load, daemon=True).start()
 
     def _load(self):
+        if self._kokoro is not None:
+            return
         d = ensure_kokoro()
         if d is None:
             return
         try:
             from kokoro_onnx import Kokoro
             with self._lock:
-                self._kokoro = Kokoro(str(d / KOKORO_FILES[0]), str(d / KOKORO_FILES[1]))
+                if self._kokoro is None:
+                    self._kokoro = Kokoro(str(d / KOKORO_FILES[0]), str(d / KOKORO_FILES[1]))
         except Exception:
+            self._kokoro = None
+
+    def unload(self):
+        with self._lock:
             self._kokoro = None
 
     def _synth(self, text):
         """-> (float32 samples, sample rate)."""
         engine, name, _ = VOICES.get(self.voice, VOICES["alex"])
-        if engine == "kokoro" and self._kokoro is not None:
+        if engine == "kokoro":
+            self._load()
+        kokoro = self._kokoro if engine == "kokoro" else None
+        if kokoro is not None:
             with self._lock:
-                samples, sr = self._kokoro.create(text, voice=name, speed=self.speed, lang="es")
+                samples, sr = kokoro.create(text, voice=name, speed=self.speed, lang="es")
             return np.asarray(samples, np.float32), sr
         return self._windows(text, name if engine == "windows" else "Pablo")
 
@@ -259,7 +316,9 @@ class Mouth:
             pass
 
 
-if __name__ == "__main__":  # manual check: python -m winhands.exo.voice
+if __name__ == "__main__" and sys.argv[1:2] == ["ears"]:  # Ears' child process
+    serve(*whisper(sys.argv[2] if len(sys.argv) > 2 else None))
+elif __name__ == "__main__":  # manual check: python -m winhands.exo.voice
     m = Mouth()
     time.sleep(2)
     m.say("Hola, soy Exo. Habla después del pitido.")

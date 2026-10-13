@@ -10,6 +10,10 @@ UI = pathlib.Path(__file__).with_name("ui") / "index.html"
 SIZES = {"compact": (240, 360), "open": (430, 672)}  # small when idle: a translucent window repaints every pixel
 TITLE = "Exo"
 HOTKEY = "Ctrl+Alt+Space"
+IDLE = 5 * 60  # unused this long: Whisper, Kokoro and Claude Code go (~1 GB) until the next request
+# Software compositing: GPU compositing of a translucent window drops a blank frame every few seconds (Exo
+# "blinks"); measured 3 blank frames / 40 s on GPU vs 0 / 90 s in software. expose-gc: mascot.js collects garbage.
+CHROMIUM_FLAGS = "--disable-gpu --disable-gpu-compositing --js-flags=--expose-gc"
 _u32 = ctypes.windll.user32
 
 
@@ -53,6 +57,7 @@ class Exo:
         self._ctx = ("", "")
         self.turn = 0  # bumped by a stop: work started before it is dropped
         self.reply, self.ack = "", None
+        self.awake, self.last_used = False, time.time()
 
     def emit(self, kind, data=None):
         self._emit(f"window.exo && exo.on({json.dumps(kind)}, {json.dumps(data, ensure_ascii=False)})")
@@ -73,13 +78,38 @@ class Exo:
             self.set_state("idle")
             self.emit("bubble", {"who": "exo", "text": "Ok, paré.", "kind": "status"})
             return
+        self.wake()  # Whisper and Claude Code load while the user talks
         threading.Thread(target=self._listen, daemon=True).start()
 
     def send_text(self, text):
         text = (text or "").strip()
         if text:
+            self.wake()
             self._ctx = ("", "")
             self._ask(text)
+
+    # --- memory: let the heavy parts go when unused ---
+    def wake(self):
+        self.last_used = time.time()
+        if not self.awake:
+            threading.Thread(target=self._warm, daemon=True).start()
+
+    def _warm(self):
+        self.awake = True
+        self.ears.start()
+        self.mouth.warm()
+        self.brain.start()
+
+    def doze(self, now=None):
+        """True when it just let Whisper, Kokoro and Claude Code go (never mid-turn; the session resumes later)."""
+        busy = self.listening or self.state in ("thinking", "working", "speaking") or self.mouth.busy() or self.brain.busy
+        if not self.awake or busy or (now or time.time()) - self.last_used < IDLE:
+            return False
+        self.awake = False
+        self.ears.close()
+        self.mouth.unload()
+        self.brain.cancel()
+        return True
 
     def set_voice(self, on):
         self.voice_on = bool(on)
@@ -104,6 +134,7 @@ class Exo:
             return
         self.mouth.voice, self.voice_on = key, True
         self._save()
+        self.wake()
         self.mouth.say("Hola, soy Exo. Así sueno ahora.")
 
     def settings(self):
@@ -125,6 +156,7 @@ class Exo:
 
     def shutdown(self):
         self.brain.cancel()
+        self.ears.close()
         self.mouth.stop()
 
     # --- flow ---
@@ -144,7 +176,13 @@ class Exo:
             self.set_state("idle")
             return
         self.set_state("thinking")
-        text = self.ears.transcribe(audio)
+        try:
+            text = self.ears.transcribe(audio)
+        except Exception as e:
+            log(f"whisper: {e}")
+            self.emit("bubble", {"who": "exo", "text": "No pude entender el audio.", "ok": False})
+            self.set_state("error")
+            return
         if turn != self.turn:  # stopped while transcribing
             return
         if not text:
@@ -187,6 +225,7 @@ class Exo:
         elif kind == "text":
             self.reply = ""
         elif kind == "done":
+            self.last_used = time.time()
             if data.get("cancelled"):  # stopped by the user: "Ok, paré." was already shown
                 return
             ack = spoken(self.ack) if self.ack else None
@@ -237,10 +276,15 @@ def _hotkey(on_press):
             on_press()
 
 
+def _doze_loop(exo):
+    while True:
+        time.sleep(30)
+        if exo.doze():
+            log("doze: Whisper, voice and Claude Code unloaded")
+
+
 def main():
-    # Software compositing: GPU compositing of a translucent window drops a blank frame every few seconds (Exo
-    # "blinks"); measured 3 blank frames / 40 s on GPU vs 0 / 90 s in software.
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-gpu-compositing")
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", CHROMIUM_FLAGS)
     from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
     from PySide6.QtGui import QColor, QIcon
     from PySide6.QtWebChannel import QWebChannel
@@ -346,7 +390,8 @@ def main():
     _no_activate(True)
 
     threading.Thread(target=_hotkey, args=(bridge.exo.toggle,), daemon=True).start()
-    threading.Thread(target=bridge.exo.brain.start, daemon=True).start()  # warm up Claude Code (~8 s)
+    bridge.exo.wake()  # load Whisper, the voice and Claude Code (~8 s) so the first request is quick
+    threading.Thread(target=_doze_loop, args=(bridge.exo,), daemon=True).start()
     app.aboutToQuit.connect(bridge.exo.shutdown)
     sys.exit(app.exec())
 
