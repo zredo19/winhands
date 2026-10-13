@@ -7,7 +7,7 @@ speech bubble + Pablo's voice. The window never takes the keyboard focus (unless
 import ctypes, ctypes.wintypes as wt, json, os, pathlib, sys, threading, time
 
 UI = pathlib.Path(__file__).with_name("ui") / "index.html"
-SIZES = {"compact": (240, 360), "open": (430, 660)}  # small when idle: a translucent window repaints every pixel
+SIZES = {"compact": (240, 360), "open": (430, 672)}  # small when idle: a translucent window repaints every pixel
 TITLE = "Exo"
 HOTKEY = "Ctrl+Alt+Space"
 _u32 = ctypes.windll.user32
@@ -71,7 +71,7 @@ class Exo:
             self.brain.interrupt()                             # Claude stops; the session stays warm
             self.mouth.stop()
             self.set_state("idle")
-            self.emit("bubble", {"who": "exo", "text": "Ok, paré."})
+            self.emit("bubble", {"who": "exo", "text": "Ok, paré.", "kind": "status"})
             return
         threading.Thread(target=self._listen, daemon=True).start()
 
@@ -95,7 +95,7 @@ class Exo:
             self.turn += 1
         self.brain.set_model(model)  # same conversation, new model (Claude Code restarts in the background)
         self.set_state("idle")
-        self.emit("bubble", {"who": "exo", "text": f"Listo, ahora pienso con {MODELS[model]['label']}."})
+        self.emit("bubble", {"who": "exo", "text": f"Ahora pienso con {MODELS[model]['label']}", "kind": "status"})
         self._save()
 
     def set_voice_name(self, key):
@@ -177,7 +177,7 @@ class Exo:
             self.reply += data
             if self.ack is None and first_sentence(self.reply):
                 self.ack = first_sentence(self.reply)  # "Entendido, abro Discord.": say it now, act after
-                self.emit("bubble", {"who": "exo", "text": spoken(self.ack)})
+                self.emit("bubble", {"who": "exo", "text": spoken(self.ack), "kind": "ack"})
                 self._say(spoken(self.ack))
             rest = without_ack(self.reply, self.ack)
             if rest:

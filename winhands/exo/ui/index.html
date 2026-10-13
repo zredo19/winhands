@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <title>Exo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --green-50:#f5fae9; --green-100:#e8f4cc; --green-300:#b6dc6f; --green-400:#a0d152; --green-500:#8dc63f;
@@ -11,127 +13,305 @@
     --ease:cubic-bezier(.22,1,.36,1);
     --sans:"Hanken Grotesk", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
     --mono:"JetBrains Mono", Consolas, monospace;
+    --line:rgba(160,209,82,.16);
+    --muted:rgba(232,244,204,.6);
+    /* HUD texture: scanlines + 22px grid. Static backgrounds, painted once. */
+    --scan:repeating-linear-gradient(0deg, rgba(160,209,82,.022) 0 1px, transparent 1px 3px);
+    --grid:linear-gradient(rgba(160,209,82,.045) 1px, transparent 1px) 0 0/22px 22px,
+           linear-gradient(90deg, rgba(160,209,82,.045) 1px, transparent 1px) 0 0/22px 22px;
   }
   * { box-sizing:border-box; }
-  /* the window is translucent: fully transparent pixels are click-through */
   html, body { margin:0; height:100%; background:transparent; overflow:hidden; font-family:var(--sans);
-               user-select:none; -webkit-user-select:none; }
+               color:var(--neutral-50); user-select:none; -webkit-user-select:none; -webkit-font-smoothing:antialiased; }
+  button { font-family:inherit; }
+  svg { display:block; }
   #root { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:flex-end;
           align-items:flex-end; padding:8px; gap:8px; }
 
-  /* conversation panel */
-  #panel { width:100%; max-height:0; opacity:0; transform:translateY(8px) scale(.98); transform-origin:bottom right;
-           transition:all .32s var(--ease); background:rgba(11,28,22,.98); border:1px solid rgba(160,209,82,.28);
-           border-radius:16px; box-shadow:0 18px 40px rgba(0,0,0,.35); display:flex; flex-direction:column;
-           overflow:hidden; }
-  body.open #panel { max-height:330px; opacity:1; transform:none; }
-  #panel header { display:flex; align-items:center; gap:8px; padding:10px 12px; color:var(--green-100);
-                  font:600 12px var(--mono); letter-spacing:.12em; border-bottom:1px solid rgba(160,209,82,.15); }
-  #panel header .dot { width:8px; height:8px; border-radius:50%; background:var(--green-400);
-                       box-shadow:0 0 10px var(--green-400); }
-  #panel header .sp { flex:1; }
-  /* model picker: a pill that opens a small card menu */
-  .picker { position:relative; }
-  #pick { display:flex; align-items:center; gap:6px; height:26px; padding:0 8px 0 10px; border-radius:999px;
-          border:1px solid rgba(160,209,82,.35); background:linear-gradient(180deg, rgba(141,198,63,.16), rgba(141,198,63,.06));
-          color:var(--green-100); font:600 11px var(--mono); letter-spacing:.04em; cursor:pointer;
-          transition:all .2s var(--ease); }
-  #pick:hover { border-color:var(--green-400); background:rgba(141,198,63,.22); }
-  #pick .chev { width:12px; height:12px; transition:transform .2s var(--ease); }
-  .picker.open #pick .chev { transform:rotate(180deg); }
-  .menu { position:absolute; top:32px; right:0; width:228px; padding:6px; border-radius:14px; z-index:5;
-          background:rgba(11,28,22,.99); border:1px solid rgba(160,209,82,.3); box-shadow:0 14px 34px rgba(0,0,0,.45);
-          opacity:0; transform:translateY(-4px) scale(.98); transform-origin:top right; pointer-events:none;
-          transition:all .2s var(--ease); }
-  .picker.open .menu { opacity:1; transform:none; pointer-events:auto; }
-  #vmenu { width:190px; right:-34px; }
-  #vmenu .opt { padding:6px 10px; }
-  .opt.sep { border-top:1px solid rgba(160,209,82,.15); border-radius:0 0 10px 10px; margin-top:4px; }
-  .opt { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; cursor:pointer;
-         transition:background .15s var(--ease); }
-  .opt:hover { background:rgba(141,198,63,.12); }
-  .opt .t { flex:1; display:flex; flex-direction:column; gap:2px; }
-  .opt .n { font:600 13px var(--sans); color:var(--neutral-50); letter-spacing:0; }
-  .opt .b { font:500 11px var(--sans); color:var(--green-300); opacity:.8; letter-spacing:0; }
-  .opt .ck { width:16px; height:16px; color:var(--green-400); opacity:0; }
-  .opt.on { background:rgba(141,198,63,.16); }
-  .opt.on .ck { opacity:1; }
-  .ib { width:26px; height:26px; border-radius:8px; border:0; background:transparent; color:var(--green-100);
-        cursor:pointer; display:grid; place-items:center; opacity:.75; transition:all .2s var(--ease); }
-  .ib:hover { opacity:1; background:rgba(160,209,82,.15); }
-  .ib svg { width:15px; height:15px; }
-  #log { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; min-height:120px;
-         user-select:text; -webkit-user-select:text; }
-  #log::-webkit-scrollbar { width:6px; } #log::-webkit-scrollbar-thumb { background:var(--forest-700); border-radius:3px; }
-  .msg { max-width:88%; padding:8px 11px; border-radius:12px; font-size:13.5px; line-height:1.4; animation:pop .32s var(--ease); }
-  .msg.user { align-self:flex-end; background:var(--green-500); color:var(--forest-950); border-bottom-right-radius:4px; }
-  .msg.exo { align-self:flex-start; background:var(--forest-800); color:var(--neutral-50); border-bottom-left-radius:4px;
-             border:1px solid rgba(160,209,82,.18); }
-  .msg.exo.err { border-color:var(--danger); }
-  .msg.live::after { content:"▍"; color:var(--green-400); animation:blink 1s steps(1) infinite; }
-  #compose { display:flex; gap:6px; padding:8px; border-top:1px solid rgba(160,209,82,.15); }
-  #compose input { flex:1; background:var(--forest-900); border:1px solid rgba(160,209,82,.2); border-radius:10px;
-                   color:var(--neutral-50); padding:8px 10px; font:13px var(--sans); outline:none; }
-  #compose input:focus { border-color:var(--green-500); }
+  /* ---------- plate: chamfered shape with a 1px edge (clip-path, no filters) ----------
+     --c1..--c4 = chamfer size per corner (TL, TR, BR, BL); --edge = border colour; --fill = background */
+  .plate { --c1:0px; --c2:0px; --c3:0px; --c4:0px; --k:.41px; --edge:rgba(160,209,82,.28); --fill:var(--forest-800);
+           position:relative; isolation:isolate; border:0; background:var(--edge);
+           clip-path:polygon(var(--c1) 0, calc(100% - var(--c2)) 0, 100% var(--c2), 100% calc(100% - var(--c3)),
+                     calc(100% - var(--c3)) 100%, var(--c4) 100%, 0 calc(100% - var(--c4)), 0 var(--c1)); }
+  .plate::before { content:""; position:absolute; inset:1px; z-index:-1; background:var(--fill);
+           clip-path:polygon(calc(var(--c1) - var(--k)) 0, calc(100% - var(--c2) + var(--k)) 0, 100% calc(var(--c2) - var(--k)),
+                     100% calc(100% - var(--c3) + var(--k)), calc(100% - var(--c3) + var(--k)) 100%, calc(var(--c4) - var(--k)) 100%,
+                     0 calc(100% - var(--c4) + var(--k)), 0 calc(var(--c1) - var(--k))); }
 
-  /* speech bubble (compact mode) */
-  #bubble { position:absolute; right:12px; bottom:250px; max-width:210px; padding:8px 11px; border-radius:12px;
-            background:rgba(11,28,22,.94); color:var(--neutral-50); font-size:12.5px; line-height:1.35;
-            border:1px solid rgba(160,209,82,.3); opacity:0; transform:translateY(6px); pointer-events:none;
-            transition:all .32s var(--ease); }
+  /* ---------- avatar (helmet) ---------- */
+  .av { --c1:8px; --c3:8px; --c2:2px; --c4:2px; --edge:rgba(160,209,82,.5);
+        --fill:radial-gradient(90% 90% at 50% 30%, var(--forest-700), var(--forest-950));
+        width:32px; height:32px; flex:none; display:grid; place-items:center; }
+  .av svg { width:24px; height:24px; }
+  .av.sm { --c1:6px; --c3:6px; --c2:1px; --c4:1px; width:24px; height:24px; }
+  .av.sm svg { width:18px; height:18px; }
+  .av.lg { --c1:14px; --c3:14px; --c2:3px; --c4:3px; width:64px; height:64px; }
+  .av.lg svg { width:46px; height:46px; }
+
+  /* ---------- conversation panel ---------- */
+  #panel { --c1:16px; --c2:4px; --c3:16px; --c4:4px; --edge:rgba(160,209,82,.34);
+           --fill:var(--scan), var(--grid), radial-gradient(120% 50% at 0% 0%, rgba(141,198,63,.10), transparent 60%), rgba(11,28,22,.97);
+           width:100%; max-height:0; opacity:0; transform:translateY(8px) scale(.98); transform-origin:bottom right;
+           transition:max-height .32s var(--ease), opacity .32s var(--ease), transform .32s var(--ease);
+           display:flex; flex-direction:column; overflow:hidden; }
+  body.open #panel { max-height:404px; opacity:1; transform:none; }
+  /* glowing plate-edge accents */
+  #panel::after { content:""; position:absolute; top:0; left:16px; width:72px; height:2px; background:var(--green-400);
+                  box-shadow:0 0 8px rgba(160,209,82,.7); }
+
+  #panel header { position:relative; display:flex; align-items:center; gap:6px; padding:12px 10px 11px 12px; flex:none; }
+  #panel header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+                         background:linear-gradient(90deg, var(--green-500) 0 56px, var(--line) 56px); }
+  .id { display:flex; align-items:center; gap:10px; }
+  .who { display:flex; flex-direction:column; gap:3px; }
+  .who .name { font:800 15px/1 var(--sans); letter-spacing:.08em; color:var(--neutral-50); }
+  .state { display:flex; align-items:center; gap:6px; font:600 9.5px/1 var(--mono); letter-spacing:.16em;
+           text-transform:uppercase; color:var(--green-300); }
+  .state i { width:6px; height:6px; background:var(--green-500); transform:rotate(45deg); }
+  body[data-state=listening] .state { color:#f0a497; }
+  body[data-state=listening] .state i { background:var(--danger); animation:blink 1s steps(1) infinite; }
+  body[data-state=thinking] .state i, body[data-state=working] .state i { background:var(--green-400); animation:blink .7s steps(1) infinite; }
+  body[data-state=speaking] .state i { background:var(--green-400); animation:blink .4s steps(1) infinite; }
+  #panel header .sp { flex:1; }
+  .vr { width:1px; height:18px; background:var(--line); margin:0 2px; }
+
+  /* model picker */
+  .picker { position:relative; }
+  #pick { --c1:7px; --c3:7px; --edge:rgba(160,209,82,.42); --fill:linear-gradient(180deg, rgba(141,198,63,.18), rgba(141,198,63,.06)), var(--forest-950);
+          display:flex; align-items:center; gap:6px; height:28px; padding:0 8px 0 10px; color:var(--green-100);
+          font:600 11px var(--mono); letter-spacing:.02em; cursor:pointer; }
+  #pick:hover { --edge:var(--green-400); --fill:rgba(141,198,63,.22); }
+  #pick .spark { width:5px; height:5px; background:var(--green-400); transform:rotate(45deg); box-shadow:0 0 6px var(--green-400); }
+  #pick .chev { width:12px; height:12px; color:var(--green-300); transition:transform .2s var(--ease); }
+  .picker.open #pick .chev { transform:rotate(180deg); }
+  .menu { --c1:4px; --c2:12px; --c3:4px; --c4:12px; --edge:rgba(160,209,82,.36); --fill:var(--scan), #0d211a;
+          position:absolute; top:34px; right:0; width:244px; padding:6px; z-index:5;
+          opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .18s var(--ease), transform .18s var(--ease); }
+  .picker.open .menu { opacity:1; transform:none; pointer-events:auto; }
+  .menu .mh { font:600 9px var(--mono); letter-spacing:.18em; color:rgba(182,220,111,.55); padding:6px 10px 6px; }
+  #vmenu { width:176px; right:-34px; }
+  #vmenu .opt { padding:7px 10px; }
+  .opt.sep { border-top:1px solid var(--line); margin-top:4px; padding-top:9px; }
+  .opt { display:flex; align-items:center; gap:10px; padding:8px 10px; cursor:pointer; position:relative;
+         transition:background .15s var(--ease); }
+  .opt:hover { background:rgba(141,198,63,.10); }
+  .opt .t { flex:1; display:flex; flex-direction:column; gap:3px; }
+  .opt .n { font:600 13px var(--sans); color:var(--neutral-50); }
+  .opt .b { font:500 11.5px/1.3 var(--sans); color:var(--muted); }
+  .opt .ck { width:15px; height:15px; color:var(--green-400); opacity:0; }
+  .opt.on { background:rgba(141,198,63,.14); }
+  .opt.on::before { content:""; position:absolute; left:0; top:8px; bottom:8px; width:2px; background:var(--green-400); }
+  .opt.on .ck { opacity:1; }
+  .opt.mute .n { color:var(--muted); }
+
+  .ib { width:28px; height:28px; border:0; background:transparent; color:var(--green-100); cursor:pointer;
+        display:grid; place-items:center; opacity:.72; transition:opacity .15s var(--ease), background .15s var(--ease);
+        clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); }
+  .ib:hover { opacity:1; background:rgba(160,209,82,.14); }
+  .ib svg { width:15px; height:15px; }
+  #close:hover { background:rgba(209,68,46,.22); color:#ffd9d2; }
+  .ib.muted { opacity:.35; }
+
+  /* ---------- log ---------- */
+  #log { flex:1; overflow-y:auto; padding:14px 14px 12px; display:flex; flex-direction:column; gap:10px; min-height:140px;
+         user-select:text; -webkit-user-select:text; }
+  #log::-webkit-scrollbar { width:6px; } #log::-webkit-scrollbar-thumb { background:var(--forest-700); }
+  .stamp { display:flex; align-items:center; gap:10px; font:600 9px var(--mono); letter-spacing:.18em; color:rgba(182,220,111,.42); margin:2px 0; }
+  .stamp::before, .stamp::after { content:""; flex:1; height:1px; background:var(--line); }
+  .msg { max-width:86%; font-size:13.5px; line-height:1.45; animation:pop .28s var(--ease); }
+  .msg .tm { float:right; margin:5px 0 -2px 10px; font:500 9.5px/1 var(--mono); letter-spacing:.04em; opacity:.5; }
+
+  /* user */
+  .msg.user { --c1:10px; --edge:var(--green-400); --fill:linear-gradient(180deg, #9ad04e, var(--green-500));
+              align-self:flex-end; padding:8px 12px 9px; color:var(--forest-950); font-weight:500; }
+  .msg.user .tm { opacity:.6; }
+
+  /* Exo answer: mini avatar + plate */
+  .msg.exo { align-self:flex-start; max-width:92%; display:grid; grid-template-columns:24px minmax(0,1fr); gap:8px; align-items:start; }
+  .msg.exo .tx { --c3:10px; --edge:rgba(160,209,82,.24); --fill:linear-gradient(180deg, #1a3d30, var(--forest-800));
+                 padding:8px 12px 9px; color:var(--neutral-50); }
+  .msg.live .tx::after { content:"▍"; color:var(--green-400); animation:blink 1s steps(1) infinite; }
+
+  /* Exo acknowledgement: no plate, smaller, system-like */
+  .msg.ack { display:flex; align-items:center; gap:7px; max-width:none; margin:-2px 0 0 32px;
+             font-size:12px; line-height:1.3; color:var(--muted); }
+  .msg.ack .ic { width:14px; height:14px; color:var(--green-500); flex:none; }
+  .msg.ack .tm { float:none; margin:0 0 0 2px; opacity:.45; }
+
+  /* status chip */
+  .msg.status { --c1:6px; --c3:6px; --edge:rgba(160,209,82,.3); --fill:rgba(141,198,63,.07);
+                align-self:center; display:flex; align-items:center; gap:7px; padding:5px 11px 5px 9px;
+                font:600 10.5px/1.2 var(--mono); color:var(--green-300); }
+  .msg.status .ic { width:12px; height:12px; flex:none; }
+  .msg.status b { color:var(--green-100); font-weight:700; }
+
+  /* error */
+  .msg.err .av { --edge:rgba(209,68,46,.7); --eye:var(--danger); }
+  .msg.err .tx { --edge:rgba(209,68,46,.75); --fill:linear-gradient(180deg, rgba(209,68,46,.16), rgba(209,68,46,.05)), var(--forest-900); }
+  .lbl { display:flex; align-items:center; gap:6px; font:700 9px var(--mono); letter-spacing:.18em; margin-bottom:5px; }
+  .msg.err .lbl { color:#f0a497; }
+  .lbl svg { width:12px; height:12px; }
+  .retry { display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:5px 10px 5px 8px; cursor:pointer;
+           border:1px solid rgba(209,68,46,.6); background:transparent; color:#ffcabf; font:600 12px var(--sans); }
+  .retry:hover { background:rgba(209,68,46,.16); }
+  .retry svg { width:13px; height:13px; }
+
+  /* confirmation card for risky actions */
+  .confirm { --c1:12px; --c3:12px; --c2:3px; --c4:3px; --edge:rgba(160,209,82,.6);
+             --fill:var(--scan), linear-gradient(180deg, #1b4031, #132f24);
+             margin-left:32px; padding:14px 14px 12px; display:flex; flex-direction:column; gap:10px; animation:pop .28s var(--ease); }
+  .confirm::after { content:""; position:absolute; left:0; right:0; top:0; height:3px; opacity:.55;
+                    background:repeating-linear-gradient(135deg, var(--green-400) 0 6px, transparent 6px 12px); }
+  .confirm .lbl { color:var(--green-300); margin:0; }
+  .confirm .lbl .sp { flex:1; }
+  .confirm .lbl .app { color:var(--muted); letter-spacing:.12em; }
+  .confirm .q { font:700 15px/1.3 var(--sans); color:var(--neutral-50); }
+  .confirm .pv { --c1:0px; --c3:8px; --edge:rgba(160,209,82,.18); --fill:rgba(11,28,22,.7); padding:9px 11px; display:flex; flex-direction:column; gap:4px; }
+  .confirm .pv .to { font:600 9.5px var(--mono); letter-spacing:.12em; color:rgba(182,220,111,.6); }
+  .confirm .pv .body { font-size:13px; line-height:1.4; color:var(--green-50); }
+  .confirm .acts { display:flex; align-items:center; gap:8px; }
+  .confirm .acts .hint { margin-left:auto; font:500 10px var(--mono); color:rgba(182,220,111,.5); }
+  .yes, .no { --c1:7px; --c3:7px; height:32px; padding:0 18px; cursor:pointer; font:700 13px var(--sans); }
+  .yes { --edge:var(--green-400); --fill:var(--green-500); color:var(--forest-950); }
+  .yes:hover { --fill:var(--green-400); }
+  .no { --edge:rgba(232,244,204,.32); --fill:rgba(11,28,22,.6); color:var(--neutral-50); }
+  .no:hover { --edge:rgba(232,244,204,.6); }
+
+  /* empty state (add .is-empty to #log when there are no messages) */
+  #log .empty { display:none; }
+  #log.is-empty > :not(.empty) { display:none; }
+  #log.is-empty .empty { display:flex; flex:1; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+                          text-align:center; padding:10px 24px; animation:pop .32s var(--ease); }
+  .empty .ti { font:700 16px var(--sans); }
+  .empty .sb { font-size:12.5px; line-height:1.55; color:var(--muted); max-width:250px; }
+  .keys { display:inline-flex; gap:3px; vertical-align:1px; }
+  kbd { font:600 9.5px/1 var(--mono); padding:3px 5px; color:var(--green-300); background:rgba(141,198,63,.08);
+        border:1px solid rgba(160,209,82,.28); border-bottom-width:2px; }
+
+  /* ---------- composer ---------- */
+  #compose { position:relative; display:flex; align-items:center; gap:6px; padding:10px; flex:none;
+             background:rgba(11,28,22,.55); border-top:1px solid var(--line); }
+  #compose .field { --c1:8px; --edge:rgba(160,209,82,.24); --fill:var(--forest-900);
+                    flex:1; min-width:0; height:36px; display:flex; align-items:center; gap:8px; padding:0 8px 0 11px; }
+  #compose .field:focus-within { --edge:var(--green-500); }
+  #compose input { flex:1; min-width:0; height:100%; background:transparent; border:0; outline:none; color:var(--neutral-50);
+                   font:14px var(--sans); }
+  #compose input::placeholder { color:rgba(232,244,204,.42); }
+  #compose input:not(:placeholder-shown) + .keys { display:none; }
+  .cb { --c1:7px; --c3:7px; width:36px; height:36px; flex:none; display:grid; place-items:center; cursor:pointer; }
+  .cb svg { width:16px; height:16px; }
+  #cmic { --edge:rgba(160,209,82,.36); --fill:var(--forest-800); color:var(--green-300); }
+  #cmic:hover { --edge:var(--green-400); color:var(--green-100); }
+  #send { --edge:var(--green-400); --fill:var(--green-500); color:var(--forest-950); }
+  #send:hover { --fill:var(--green-400); }
+
+  /* ---------- speech bubble (panel closed). App: set text on #bubble .bt ---------- */
+  #bubble { position:absolute; right:14px; bottom:252px; max-width:224px; opacity:0; transform:translateY(6px);
+            pointer-events:none; transition:opacity .3s var(--ease), transform .3s var(--ease); }
   #bubble.show { opacity:1; transform:none; }
   body.open #bubble { display:none; }
+  #bubble .bb { --c1:10px; --c3:0px; --edge:rgba(160,209,82,.42); --fill:var(--scan), rgba(11,28,22,.95);
+                padding:8px 12px 10px; display:flex; flex-direction:column; gap:4px; }
+  #bubble .hd { display:flex; align-items:center; gap:6px; font:600 9px var(--mono); letter-spacing:.18em; color:var(--green-300); }
+  #bubble .hd i { width:5px; height:5px; background:var(--green-400); transform:rotate(45deg); }
+  #bubble .bt { font-size:13px; line-height:1.4; color:var(--neutral-50); }
+  #bubble::after { content:""; position:absolute; right:70px; bottom:-8px; width:14px; height:9px; background:var(--green-500);
+                   clip-path:polygon(0 0,100% 0,100% 100%); }
 
-  /* dock: mascot + controls */
+  /* ---------- dock: mascot + bar ---------- */
   #dock { position:relative; width:214px; height:236px; display:flex; flex-direction:column; align-items:center;
           justify-content:flex-end; }
-  #mascot { width:200px; height:184px; cursor:pointer; position:relative; display:grid; place-items:center;
-            }  /* no CSS filter: it re-rasterizes the whole character every frame */
+  #mascot { width:200px; height:184px; cursor:pointer; position:relative; display:grid; place-items:center; }
   #mascot > * { max-width:100%; max-height:100%; }
-  #bar { display:flex; align-items:center; gap:6px; padding:5px; margin-top:4px; border-radius:999px;
-         background:rgba(11,28,22,.88); border:1px solid rgba(160,209,82,.25); }
-  #mic { width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center;
-         background:var(--green-500); color:var(--forest-950); position:relative; transition:all .2s var(--ease); }
-  #mic:hover { background:var(--green-400); transform:scale(1.05); }
+  #bar { --c1:10px; --c3:10px; --c2:3px; --c4:3px; --edge:rgba(160,209,82,.34);
+         --fill:var(--scan), linear-gradient(180deg, rgba(22,54,42,.96), rgba(11,28,22,.96));
+         display:flex; align-items:center; gap:6px; padding:5px 12px 5px 6px; margin-top:4px; }
+  body.open #chat { opacity:1; background:rgba(160,209,82,.18); color:var(--green-400); }
+  #mic { position:relative; width:42px; height:42px; border:0; padding:0; background:transparent; cursor:pointer; color:var(--forest-950); }
+  #mic .core, #mic::before { position:absolute; clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%); }
+  #mic .core { inset:0; display:grid; place-items:center; background:var(--green-500); transition:background .2s var(--ease), transform .2s var(--ease); }
+  #mic:hover .core { background:var(--green-400); transform:scale(1.05); }
   #mic svg { width:18px; height:18px; }
-  #mic::before { content:""; position:absolute; inset:-5px; border-radius:50%; border:2px solid var(--green-400);
-                 opacity:0; transform:scale(calc(1 + var(--lv, 0) * .6)); transition:transform .1s linear; }
-  body[data-state=listening] #mic { background:var(--danger); color:#fff; }
-  body[data-state=listening] #mic::before { opacity:.8; }
-  body[data-state=thinking] #mic, body[data-state=working] #mic { background:var(--forest-700); color:var(--green-300); }
+  #mic::before { content:""; inset:-5px; background:rgba(160,209,82,.28); opacity:0;
+                 transform:scale(calc(1 + var(--lv, 0) * .45)); transition:transform .1s linear; }
+  body[data-state=listening] #mic .core { background:var(--danger); color:#fff; }
+  body[data-state=listening] #mic::before { opacity:1; background:rgba(209,68,46,.35); }
+  body[data-state=thinking] #mic .core, body[data-state=working] #mic .core { background:var(--forest-700); color:var(--green-300); }
   body[data-state=thinking] #mic svg, body[data-state=working] #mic svg { animation:spin 1.2s linear infinite; }
-  #status { font:600 10px var(--mono); letter-spacing:.14em; color:var(--green-300); text-transform:uppercase;
-            min-width:74px; text-align:center; }
+  #status { display:flex; align-items:center; gap:6px; min-width:78px; font:600 10px var(--mono); letter-spacing:.16em;
+            color:var(--green-300); text-transform:uppercase; }
+  #status::before { content:""; width:6px; height:6px; flex:none; background:var(--green-500); transform:rotate(45deg); }
+  body[data-state=listening] #status { color:#f0a497; }
+  body[data-state=listening] #status::before { background:var(--danger); animation:blink 1s steps(1) infinite; }
+  body[data-state=thinking] #status::before, body[data-state=working] #status::before,
+  body[data-state=speaking] #status::before { background:var(--green-400); animation:blink .7s steps(1) infinite; }
+  body[data-state=error] #status { color:#f0a497; } body[data-state=error] #status::before { background:var(--danger); }
+  body[data-state=sleeping] #status { color:rgba(182,220,111,.45); } body[data-state=sleeping] #status::before { background:var(--forest-700); }
 
-  @keyframes pop { from { opacity:0; transform:translateY(6px) scale(.98); } }
-  @keyframes blink { 50% { opacity:0; } }
+  @keyframes pop { from { opacity:0; transform:translateY(6px); } }
+  @keyframes blink { 50% { opacity:.2; } }
   @keyframes spin { to { transform:rotate(360deg); } }
 </style>
 </head>
 <body data-state="idle">
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="helm" viewBox="0 0 32 32">
+    <path d="M16 2.5 19 6l6.5 1.5 3 7-2.5 9-7 4.5h-6l-7-4.5-2.5-9 3-7L13 6z" fill="#16362a" stroke="#8dc63f" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M16 2.5V9" stroke="#a0d152" stroke-width="1.6"/>
+    <path d="M6.5 13.5 14 12v5H8z" style="fill:var(--eye,#a0d152)"/>
+    <path d="M25.5 13.5 18 12v5h6z" style="fill:var(--eye,#a0d152)"/>
+    <path d="M11.5 21.5h9l-2 3.5h-5z" fill="#588424"/>
+  </symbol>
+</svg>
 <div id="root">
-  <section id="panel">
-    <header><span class="dot"></span>EXO<span class="sp"></span>
-      <div id="picker" class="picker">
-        <button id="pick" title="Claude model"><span id="pickname">…</span>
-          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
-        <div id="menu" class="menu"></div>
+  <section id="panel" class="plate">
+    <header>
+      <div class="id">
+        <span class="av plate"><svg><use href="#helm"/></svg></span>
+        <div class="who"><span class="name">EXO</span><span class="state"><i></i><span id="stateText">Ready</span></span></div>
       </div>
-      <div id="vpicker" class="picker"><button class="ib" id="voice" title="Voice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button><div id="vmenu" class="menu"></div></div>
+      <span class="sp"></span>
+      <div id="picker" class="picker">
+        <button id="pick" class="plate" title="Claude model"><span class="spark"></span><span id="pickname">…</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div id="menu" class="menu plate">
+        </div>
+      </div>
+      <div id="vpicker" class="picker">
+        <button class="ib" id="voice" title="Voice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+        <div id="vmenu" class="menu plate">
+        </div>
+      </div>
+      <span class="vr"></span>
       <button class="ib" id="new" title="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="ib" id="min" title="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button>
       <button class="ib" id="close" title="Quit Exo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </header>
-    <div id="log"></div>
-    <form id="compose"><input id="text" placeholder="Write to Exo…" autocomplete="off"></form>
+
+    <div id="log" class="is-empty">
+      <div class="empty">
+        <span class="av lg plate"><svg><use href="#helm"/></svg></span>
+        <div class="ti">Exo is ready</div>
+        <div class="sb">Click me or press <span class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Space</kbd></span> and talk. You can also type below.</div>
+      </div>
+    </div>
+
+    <form id="compose">
+      <div class="field plate"><input id="text" placeholder="Write to Exo…" autocomplete="off"><span class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Space</kbd></span></div>
+      <button type="button" class="cb plate" id="cmic" title="Talk (Ctrl+Alt+Space)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
+      <button type="submit" class="cb plate" id="send" title="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+    </form>
   </section>
-  <div id="bubble"></div>
+
+  <div id="bubble"><div class="bb plate"><span class="hd"><i></i><span>EXO</span></span><span class="bt"></span></div></div>
+
   <div id="dock">
     <div id="mascot" title="Click to talk (Ctrl+Alt+Space)"></div>
-    <div id="bar">
+    <div id="bar" class="plate">
       <button class="ib" id="chat" title="Conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button id="mic" title="Talk (Ctrl+Alt+Space)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
-      <span id="status">idle</span>
+      <button id="mic" title="Talk (Ctrl+Alt+Space)"><span class="core"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></span></button>
+      <span id="status">ready</span>
     </div>
   </div>
 </div>
@@ -142,26 +322,54 @@
 const $ = s => document.querySelector(s);
 let bridge = null;
 const api = () => bridge;
-const LABEL = { idle:"ready", listening:"listening", thinking:"thinking", working:"working", speaking:"speaking",
-                success:"done", error:"error", sleeping:"asleep" };
-let live = null, voiceOn = true, sleepTimer = null, bubbleTimer = null;
+const LABEL = { idle:"Ready", listening:"Listening", thinking:"Thinking", working:"Working", speaking:"Speaking",
+                success:"Done", error:"Error", sleeping:"Asleep" };
+const ICON = {
+  check: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m5 12 5 5 9-10"/></svg>',
+  stop: '<svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>',
+  swap: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3 2 20h20zM12 10v4M12 17v.5"/></svg>',
+};
+const CHECK = '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10"/></svg>';
+const AV = '<span class="av sm plate"><svg><use href="#helm"/></svg></span>';
+const EMPTY = $("#log").innerHTML;
+let live = null, voiceOn = true, sleepTimer = null, bubbleTimer = null, lastStamp = 0;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 function setState(s) {
   document.body.dataset.state = s;
-  $("#status").textContent = LABEL[s] || s;
+  const l = LABEL[s] || s;
+  $("#stateText").textContent = l;
+  $("#status").textContent = l.toLowerCase();
+  $("#bubble .hd span").textContent = "EXO · " + l.toUpperCase();
   window.ExoMascot && ExoMascot.setState(s);
   clearTimeout(sleepTimer);
   if (s === "idle") sleepTimer = setTimeout(() => setState("sleeping"), 5 * 60 * 1000);
 }
-function add(who, text, cls = "") {
-  const d = document.createElement("div");
-  d.className = `msg ${who} ${cls}`; d.textContent = text;
-  $("#log").appendChild(d); $("#log").scrollTop = 1e9;
+function put(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  const d = t.content.firstChild;
+  $("#log").classList.remove("is-empty");
+  $("#log").appendChild(d);
+  $("#log").scrollTop = 1e9;
   return d;
 }
+// kinds: user | exo | live (Exo still typing) | ack ("Entendido, ...") | status ("Ok, paré.") | err
+function add(kind, text) {
+  if (Date.now() - lastStamp > 10 * 60 * 1000) { lastStamp = Date.now(); put(`<div class="stamp">TODAY · ${clock()}</div>`); }
+  const tm = `<span class="tm">${clock()}</span>`, t = esc(text);
+  if (kind === "user") return put(`<div class="msg user plate">${t}${tm}</div>`);
+  if (kind === "ack") return put(`<div class="msg exo ack">${ICON.check}<span>${t}</span>${tm}</div>`);
+  if (kind === "status") return put(`<div class="msg status plate">${/^ok/i.test(text) ? ICON.stop : ICON.swap}<span>${t}</span></div>`);
+  if (kind === "err") return put(`<div class="msg exo err">${AV}<div class="tx plate"><div class="lbl">${ICON.warn}ERROR</div>${t}${tm}</div></div>`);
+  return put(`<div class="msg exo${kind === "live" ? " live" : ""}">${AV}<div class="tx plate">${t}${kind === "live" ? "" : tm}</div></div>`);
+}
 function bubble(text) {
-  const b = $("#bubble"); b.textContent = text; b.classList.add("show");
-  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove("show"), 9000);
+  $("#bubble .bt").textContent = text;
+  $("#bubble").classList.add("show");
+  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => $("#bubble").classList.remove("show"), 9000);
 }
 function setOpen(open) {
   if (open) { api() && api().resize("open"); setTimeout(() => document.body.classList.add("open"), 30); }
@@ -173,42 +381,45 @@ window.exo = {
     if (kind === "state") setState(data);
     else if (kind === "level") $("#mic").style.setProperty("--lv", data), window.ExoMascot && ExoMascot.setLevel && ExoMascot.setLevel(data);
     else if (kind === "bubble") {
-      if (data.who === "exo" && live) { live.remove(); live = null; }
-      add(data.who, data.text, data.ok === false ? "err" : "");
-      if (data.who === "exo") bubble(data.text);
+      if (data.who === "user") { add("user", data.text); return; }
+      if (live) { live.remove(); live = null; }
+      const k = data.kind || (data.ok === false ? "err" : "exo");
+      add(k, data.text);
+      if (k !== "status") bubble(data.text);
     }
-    else if (kind === "stream") { if (!live) live = add("exo", "", "live"); live.textContent = data; $("#log").scrollTop = 1e9; }
-    else if (kind === "reset") { $("#log").innerHTML = ""; live = null; }
-    else if (kind === "hello") add("exo", `Hi! Click me or press ${data.hotkey} and talk.`);
+    else if (kind === "stream") {
+      if (!live) live = add("live", "");
+      live.querySelector(".tx").textContent = data; $("#log").scrollTop = 1e9;
+    }
+    else if (kind === "reset") { $("#log").innerHTML = EMPTY; $("#log").classList.add("is-empty"); live = null; lastStamp = 0; }
     else if (kind === "settings") {
       models = data.models; renderPicker(data.model);
       voices = data.voices; voiceOn = data.voice; renderVoices(data.voice_name);
-      voiceOn = data.voice; $("#voice").style.opacity = voiceOn ? "" : ".35";
     }
   }
 };
 
 function talk() { if (document.body.dataset.state === "sleeping") setState("idle"); api() && api().toggle(); }
-$("#mic").onclick = talk;
+$("#mic").onclick = $("#cmic").onclick = talk;
 // the mascot: click = talk, drag = move the window
 let down = null;
 $("#mascot").onmousedown = e => { if (e.button === 0) down = [e.screenX, e.screenY]; };
 window.addEventListener("mousemove", e => {
   if (down && Math.hypot(e.screenX - down[0], e.screenY - down[1]) > 5) { down = null; api() && api().drag(); }
 });
-window.addEventListener("mouseup", e => { if (down) { down = null; talk(); } });
+window.addEventListener("mouseup", () => { if (down) { down = null; talk(); } });
 $("#text").onfocus = () => api() && api().keyboard(true);
 $("#text").onblur = () => api() && api().keyboard(false);
 $("#chat").onclick = () => setOpen(!document.body.classList.contains("open"));
 $("#min").onclick = () => setOpen(false);
 $("#new").onclick = () => api() && api().reset();
 $("#close").onclick = () => api() && api().quit();
+
 let models = [];
-const CHECK = '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10"/></svg>';
 function renderPicker(current) {
   const m = models.find(x => x.key === current) || models[0];
   $("#pickname").textContent = m ? m.label : "";
-  $("#menu").innerHTML = models.map(x => `<div class="opt${x.key === current ? " on" : ""}" data-k="${x.key}">
+  $("#menu").innerHTML = '<div class="mh">MODEL</div>' + models.map(x => `<div class="opt${x.key === current ? " on" : ""}" data-k="${x.key}">
     <div class="t"><span class="n">${x.label}</span><span class="b">${x.blurb}</span></div>${CHECK}</div>`).join("");
   $("#menu").querySelectorAll(".opt").forEach(o => o.onclick = e => {
     e.stopPropagation(); $("#picker").classList.remove("open");
@@ -217,17 +428,18 @@ function renderPicker(current) {
 }
 $("#pick").onclick = e => { e.stopPropagation(); $("#vpicker").classList.remove("open"); $("#picker").classList.toggle("open"); };
 window.addEventListener("click", () => document.querySelectorAll(".picker").forEach(x => x.classList.remove("open")));
+
 let voices = [], voiceName = "alex";
 function renderVoices(current) {
   voiceName = current || voiceName;
-  $("#voice").style.opacity = voiceOn ? "" : ".35";
-  $("#vmenu").innerHTML = voices.map(v => `<div class="opt${voiceOn && v.key === voiceName ? " on" : ""}" data-k="${v.key}">
+  $("#voice").classList.toggle("muted", !voiceOn);
+  $("#vmenu").innerHTML = '<div class="mh">VOICE</div>' + voices.map(v => `<div class="opt${voiceOn && v.key === voiceName ? " on" : ""}" data-k="${v.key}">
     <div class="t"><span class="n">${v.label}</span></div>${CHECK}</div>`).join("") +
-    `<div class="opt sep${voiceOn ? "" : " on"}" data-k="mute"><div class="t"><span class="n">Mute</span></div>${CHECK}</div>`;
+    `<div class="opt sep mute${voiceOn ? "" : " on"}" data-k="mute"><div class="t"><span class="n">Mute</span></div>${CHECK}</div>`;
   $("#vmenu").querySelectorAll(".opt").forEach(o => o.onclick = e => {
     e.stopPropagation(); $("#vpicker").classList.remove("open");
     if (o.dataset.k === "mute") { voiceOn = false; api() && api().set_voice(false); }
-    else { voiceOn = true; api() && api().set_voice_name(o.dataset.k); voiceName = o.dataset.k; }
+    else { voiceOn = true; voiceName = o.dataset.k; api() && api().set_voice_name(o.dataset.k); }
     renderVoices();
   });
 }

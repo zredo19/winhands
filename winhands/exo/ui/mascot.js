@@ -5,13 +5,13 @@
   setTimeout(() => ExoMascot.transformIn(1600), 300);
 
   // Frame limiter: every repaint of a translucent window costs CPU, and CSS animations run at 60 fps.
-  // Pause them all and step them by hand: 12 fps for the slow idle / sleeping motion, 24 fps otherwise.
+  // Pause the character's animations and step them by hand: 12 fps for the slow idle / sleeping motion, 24 fps otherwise.
   const CALM = new Set(["idle", "sleeping"]);
   let last = performance.now();
   (function tick() {
     const now = performance.now(), dt = now - last;
     last = now;
-    for (const a of document.getAnimations()) {
+    for (const a of el.getAnimations({ subtree: true })) {  // only the character: UI animations stay native
       if (a.playState === "running") a.pause();
       a.currentTime = (a.currentTime || 0) + dt;
     }
