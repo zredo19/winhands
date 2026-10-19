@@ -12,7 +12,9 @@ winhands installer for Windows 10 2004+/11. No admin rights needed.
   python (registers the MCP server in Claude Code and installs the skill). It never runs winhands.exe: Windows
   App Control / Smart App Control can block that unsigned launcher.
   -DryRun prints what would run without changing anything.
-  WINHANDS_SPEC overrides the package source (testing).
+  WINHANDS_SPEC overrides the package source. With Exo (the voice assistant), which also gets its shortcuts:
+    $env:WINHANDS_SPEC='winhands[exo]'; irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1 | iex
+  (winhands[exo-gpu] with an NVIDIA GPU)
 #>
 param([switch]$Uninstall, [switch]$DryRun)
 
@@ -89,6 +91,17 @@ function Install-Winhands {
         }
     }
     catch { throw "$($_.Exception.Message)`nwinhands itself is installed. To finish by hand, run:  $manual" }
+
+    # Exo extra: create its shortcuts here too, through the tool python, so nobody has to run the blockable winhands.exe.
+    if ($Spec -match '\[exo') {
+        try {
+            Step 'create the Exo shortcuts (Start Menu and Desktop)' {
+                & $py -m winhands exo --shortcut
+                if ($LASTEXITCODE) { throw "exit code $LASTEXITCODE" }
+            }
+        }
+        catch { Say "$($_.Exception.Message). To create them by hand, run:  & `"$py`" -m winhands exo --shortcut" }
+    }
 
     if ($DryRun) { Say 'Dry run finished. Nothing was changed.'; return }
     Say 'Done. Restart Claude Code, then ask it: "open Notepad and type hello".'

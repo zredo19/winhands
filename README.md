@@ -35,6 +35,12 @@ Installs uv if missing, then does the same as the commands above. You can read t
 irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1 | iex
 ```
 
+With Exo, the voice assistant (also creates its Start Menu and Desktop shortcuts; use `winhands[exo-gpu]` with an NVIDIA GPU):
+
+```powershell
+$env:WINHANDS_SPEC='winhands[exo]'; irm https://raw.githubusercontent.com/zredo19/winhands/main/install.ps1 | iex
+```
+
 To uninstall with it:
 
 ```powershell
