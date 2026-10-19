@@ -54,11 +54,23 @@ function Get-ToolBin {
     if (Get-Uv) { (uv tool dir --bin | Out-String).Trim() } else { 'UV_TOOL_BIN_DIR' }
 }
 
+# A running winhands (the MCP server Claude Code started, or Exo) locks the tool folder and uv fails with "Access denied"
+# (os error 5) when it replaces it. Claude Code restarts the server on its next start.
+function Stop-Winhands {
+    if (-not (Get-Uv)) { return }
+    $dir = (Join-Path (uv tool dir | Out-String).Trim() 'winhands') + '\'
+    $running = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
+    if ($running) {
+        Step "stop the running winhands ($($running.Count) process(es): Claude Code's MCP server or Exo)" { $running | Stop-Process -Force; Start-Sleep -Milliseconds 500 }
+    }
+}
+
 function Install-Winhands {
     if (-not (Get-Uv)) {
         Step 'install uv (Python package manager)' { Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression }
         if (-not $DryRun -and -not (Get-Uv)) { throw 'uv was installed but is not on PATH yet. Open a new terminal and run this again.' }
     }
+    Stop-Winhands
 
     # uv downloads a managed Python >= 3.11 by itself, so no Python is needed here.
     # --compile-bytecode: without it the first MCP start took ~18 s (Claude Code may time out), with it ~3 s.
@@ -110,6 +122,7 @@ function Install-Winhands {
 
 function Uninstall-Winhands {
     if (-not (Get-Uv)) { Say 'uv is not installed, so winhands was not installed as a uv tool.'; return }
+    Stop-Winhands
     $py = Get-ToolPython
     if ($DryRun -or (Test-Path $py)) {
         Step 'remove the MCP entry and the skill (python -m winhands setup --remove)' { & $py -m winhands setup --remove }
