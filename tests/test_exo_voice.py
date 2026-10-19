@@ -52,3 +52,59 @@ def test_ears_run_whisper_in_a_child_process_that_close_ends():
     assert ears.proc is None and proc.wait(5) is not None
     assert ears.transcribe(np.zeros(5, np.float32)) == "5 muestras 0.0 ñ"   # starts again on demand
     ears.close()
+
+
+class _Local:
+    def __init__(self):
+        self.calls = []
+
+    def transcribe(self, audio):
+        self.calls.append("transcribe")
+        return "local"
+
+    def close(self):
+        self.calls.append("close")
+
+
+def test_cloud_ears_use_groq_and_fall_back_to_local_whisper_so_no_request_is_lost():
+    import numpy as np
+    from winhands.exo.voice import CloudEars
+    sent, local = [], _Local()
+    ears = CloudEars("k", send=lambda audio, key: sent.append(key) or "abre discord", local=local)
+    ears.start()                                                       # nothing loads on this PC
+    assert ears.transcribe(np.zeros(5, np.float32)) == "abre discord" and sent == ["k"] and local.calls == []
+
+    def offline(audio, key):
+        raise OSError("no internet")
+    ears.send = offline
+    assert ears.transcribe(np.zeros(5, np.float32)) == "local" and local.calls == ["transcribe"]
+    ears.close()
+    assert local.calls[-1] == "close"
+
+
+def test_groq_request_is_a_spanish_whisper_upload_of_a_16khz_wav(monkeypatch):
+    import io, json, urllib.request, wave
+    import numpy as np
+    from winhands.exo import voice
+    seen = {}
+
+    class Reply(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    def urlopen(req, timeout):
+        seen["req"] = req
+        return Reply(json.dumps({"text": " abre discord "}).encode())
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert voice.groq(np.zeros(voice.RATE, np.float32), "k") == "abre discord"
+    req = seen["req"]
+    assert req.full_url == voice.GROQ_URL and req.get_header("Authorization") == "Bearer k"
+    body = req.data
+    for field in (b'name="model"\r\n\r\nwhisper-large-v3\r\n', b'name="language"\r\n\r\nes\r\n'):
+        assert field in body
+    wav = body[body.index(b"RIFF"):]
+    with wave.open(io.BytesIO(wav)) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getsampwidth()) == (voice.RATE, 1, 2)

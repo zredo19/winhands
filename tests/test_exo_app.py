@@ -49,3 +49,42 @@ def test_waking_up_brings_back_whisper_voice_and_claude():
     exo.awake = False
     exo._warm()
     assert log == ["ears.start", "mouth.warm", "brain.start"] and exo.awake
+
+
+def exo_with_history(log, tmp_path):
+    exo = exo_at_rest(log)
+    exo.chats_dir, exo.chat, exo.turn, exo.sent = tmp_path, None, 0, []
+    exo._emit = exo.sent.append
+    exo.brain.session = "s1"
+    return exo
+
+
+def test_conversations_are_saved_and_reopen_on_their_claude_session(tmp_path):
+    log = []
+    exo = exo_with_history(log, tmp_path)
+    exo.emit("bubble", {"who": "exo", "text": "Ahora pienso con Opus 5.5", "kind": "status"})
+    assert exo.chats() == []                                             # nobody spoke yet: no chat
+    exo.emit("bubble", {"who": "user", "text": "abre discord"})
+    exo.emit("bubble", {"who": "exo", "text": "Listo.", "ok": True})
+    exo.reset()
+    exo.brain.session = None                                             # a new conversation
+    [chat] = exo.chats()
+    assert chat["title"] == "abre discord" and chat["at"] > 0
+    exo.sent.clear()
+    exo.open_chat(chat["id"])
+    assert exo.brain.session == "s1"                                     # talking again continues it
+    assert any('"reset"' in js for js in exo.sent)
+    assert any('"history"' in js and "abre discord" in js and "Listo." in js for js in exo.sent)
+    exo.emit("bubble", {"who": "user", "text": "y ahora spotify"})
+    [again] = exo.chats()
+    assert again["id"] == chat["id"] and again["on"]
+
+
+def test_open_chat_ignores_anything_that_is_not_a_saved_chat(tmp_path):
+    log = []
+    exo = exo_with_history(log, tmp_path)
+    (tmp_path / "123.json").write_text("{broken", encoding="utf-8")
+    exo.open_chat("../preferences")
+    exo.open_chat("123")
+    exo.open_chat("999")
+    assert log == [] and exo.sent == [] and exo.chats() == []

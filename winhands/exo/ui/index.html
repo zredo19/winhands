@@ -92,6 +92,10 @@
   .menu .mh { font:600 9px var(--mono); letter-spacing:.18em; color:rgba(182,220,111,.55); padding:6px 10px 6px; }
   #vmenu { width:176px; right:-34px; }
   #vmenu .opt { padding:7px 10px; }
+  #hmenu { width:260px; max-height:300px; overflow-y:auto; }
+  #hmenu::-webkit-scrollbar { width:6px; } #hmenu::-webkit-scrollbar-thumb { background:var(--forest-700); }
+  #hmenu .t { min-width:0; }
+  #hmenu .n { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .opt.sep { border-top:1px solid var(--line); margin-top:4px; padding-top:9px; }
   .opt { display:flex; align-items:center; gap:10px; padding:8px 10px; cursor:pointer; position:relative;
          transition:background .15s var(--ease); }
@@ -284,6 +288,11 @@
         </div>
       </div>
       <span class="vr"></span>
+      <div id="hpicker" class="picker">
+        <button class="ib" id="hist" title="Past conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button>
+        <div id="hmenu" class="menu plate">
+        </div>
+      </div>
       <button class="ib" id="new" title="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="ib" id="min" title="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg></button>
       <button class="ib" id="close" title="Quit Exo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
@@ -335,7 +344,10 @@ const AV = '<span class="av sm plate"><svg><use href="#helm"/></svg></span>';
 const EMPTY = $("#log").innerHTML;
 let live = null, voiceOn = true, sleepTimer = null, bubbleTimer = null, lastStamp = 0;
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const clock = (at = Date.now()) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const day = at => new Date(at).toDateString() === new Date().toDateString() ? "Today"
+  : new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+const kindOf = d => d.who === "user" ? "user" : d.kind || (d.ok === false ? "err" : "exo");
 
 function setState(s) {
   document.body.dataset.state = s;
@@ -357,9 +369,9 @@ function put(html) {
   return d;
 }
 // kinds: user | exo | live (Exo still typing) | ack ("Entendido, ...") | status ("Ok, paré.") | err
-function add(kind, text) {
-  if (Date.now() - lastStamp > 10 * 60 * 1000) { lastStamp = Date.now(); put(`<div class="stamp">TODAY · ${clock()}</div>`); }
-  const tm = `<span class="tm">${clock()}</span>`, t = esc(text);
+function add(kind, text, at = Date.now()) {
+  if (at - lastStamp > 10 * 60 * 1000) { lastStamp = at; put(`<div class="stamp">${day(at).toUpperCase()} · ${clock(at)}</div>`); }
+  const tm = `<span class="tm">${clock(at)}</span>`, t = esc(text);
   if (kind === "user") return put(`<div class="msg user plate">${t}${tm}</div>`);
   if (kind === "ack") return put(`<div class="msg exo ack">${ICON.check}<span>${t}</span>${tm}</div>`);
   if (kind === "status") return put(`<div class="msg status plate">${/^ok/i.test(text) ? ICON.stop : ICON.swap}<span>${t}</span></div>`);
@@ -381,9 +393,9 @@ window.exo = {
     if (kind === "state") setState(data);
     else if (kind === "level") $("#mic").style.setProperty("--lv", data), window.ExoMascot && ExoMascot.setLevel && ExoMascot.setLevel(data);
     else if (kind === "bubble") {
-      if (data.who === "user") { add("user", data.text); return; }
+      const k = kindOf(data);
+      if (k === "user") { add("user", data.text); return; }
       if (live) { live.remove(); live = null; }
-      const k = data.kind || (data.ok === false ? "err" : "exo");
       add(k, data.text);
       if (k !== "status") bubble(data.text);
     }
@@ -392,6 +404,8 @@ window.exo = {
       live.querySelector(".tx").textContent = data; $("#log").scrollTop = 1e9;
     }
     else if (kind === "reset") { $("#log").innerHTML = EMPTY; $("#log").classList.add("is-empty"); live = null; lastStamp = 0; }
+    else if (kind === "history") data.forEach(m => add(kindOf(m), m.text, m.at));
+    else if (kind === "chats") renderChats(data);
     else if (kind === "settings") {
       models = data.models; renderPicker(data.model);
       voices = data.voices; voiceOn = data.voice; renderVoices(data.voice_name);
@@ -426,7 +440,11 @@ function renderPicker(current) {
     if (o.dataset.k !== current) { renderPicker(o.dataset.k); api() && api().set_model(o.dataset.k); }
   });
 }
-$("#pick").onclick = e => { e.stopPropagation(); $("#vpicker").classList.remove("open"); $("#picker").classList.toggle("open"); };
+function toggleMenu(p) {
+  document.querySelectorAll(".picker").forEach(x => x !== p && x.classList.remove("open"));
+  return p.classList.toggle("open");
+}
+$("#pick").onclick = e => { e.stopPropagation(); toggleMenu($("#picker")); };
 window.addEventListener("click", () => document.querySelectorAll(".picker").forEach(x => x.classList.remove("open")));
 
 let voices = [], voiceName = "alex";
@@ -443,7 +461,18 @@ function renderVoices(current) {
     renderVoices();
   });
 }
-$("#voice").onclick = e => { e.stopPropagation(); $("#picker").classList.remove("open"); $("#vpicker").classList.toggle("open"); };
+$("#voice").onclick = e => { e.stopPropagation(); toggleMenu($("#vpicker")); };
+
+function renderChats(list) {
+  $("#hmenu").innerHTML = '<div class="mh">HISTORY</div>' + (list.length ? list.map(c => `<div class="opt${c.on ? " on" : ""}" data-k="${esc(c.id)}">
+    <div class="t"><span class="n">${esc(c.title)}</span><span class="b">${day(c.at)} · ${clock(c.at)}</span></div>${CHECK}</div>`).join("")
+    : '<div class="opt mute"><div class="t"><span class="b">No past conversations yet</span></div></div>');
+  $("#hmenu").querySelectorAll(".opt[data-k]").forEach(o => o.onclick = e => {
+    e.stopPropagation(); $("#hpicker").classList.remove("open");
+    if (!o.classList.contains("on")) api() && api().open_chat(o.dataset.k);
+  });
+}
+$("#hist").onclick = e => { e.stopPropagation(); if (toggleMenu($("#hpicker"))) api() && api().list_chats(); };
 $("#compose").onsubmit = e => { e.preventDefault(); const t = $("#text").value; $("#text").value = ""; api() && api().send_text(t); };
 new QWebChannel(qt.webChannelTransport, ch => { bridge = ch.objects.bridge; bridge.ready(); });
 </script>

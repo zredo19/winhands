@@ -169,6 +169,50 @@ class Ears:
             proc.kill()
 
 
+GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+
+
+def groq(audio, key, model="whisper-large-v3", timeout=15):
+    """One phrase -> text on Groq (full large-v3, not turbo: fewer mistakes with fast Chilean speech)."""
+    import io, json, urllib.request, uuid
+    wav = io.BytesIO()
+    with wave.open(wav, "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(RATE)
+        w.writeframes((np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
+    b = uuid.uuid4().hex
+    fields = {"model": model, "language": "es", "prompt": VOCAB, "temperature": "0", "response_format": "json"}
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
+    body += (f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="exo.wav"\r\n'
+             f"Content-Type: audio/wav\r\n\r\n").encode() + wav.getvalue() + f"\r\n--{b}--\r\n".encode()
+    req = urllib.request.Request(GROQ_URL, body, {"Authorization": f"Bearer {key}", "User-Agent": "exo",
+                                                  "Content-Type": f"multipart/form-data; boundary={b}"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())["text"].strip()
+
+
+class CloudEars:
+    """Ears on Groq's free tier: nothing loads on this PC. If Groq fails (offline, rate limit) that phrase goes to
+    the local Whisper instead, so a request is never lost."""
+    device = "groq"
+
+    def __init__(self, key, send=groq, local=None):
+        self.key, self.send, self.local = key, send, local or Ears()
+
+    def start(self):
+        pass
+
+    def transcribe(self, audio):
+        try:
+            return self.send(audio, self.key)
+        except Exception as e:
+            from .app import log
+            log(f"groq: {e}; local Whisper takes this phrase")
+            return self.local.transcribe(audio)
+
+    def close(self):
+        self.local.close()
+
+
 VOICES = {  # key -> (engine, engine voice, label); Kokoro voices sound human, "pablo" is the built-in Windows voice
     "alex": ("kokoro", "em_alex", "Alex"),
     "dora": ("kokoro", "ef_dora", "Dora"),

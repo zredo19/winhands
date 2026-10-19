@@ -46,12 +46,13 @@ class Exo:
 
     def __init__(self, emit):
         from .brain import HOME, Brain, load_settings
-        from .voice import Ears, Mouth, Recorder
+        from .voice import CloudEars, Ears, Mouth, Recorder
         self._emit = emit
-        self.prefs_path = HOME / "preferences.json"
+        self.prefs_path, self.chats_dir, self.chat = HOME / "preferences.json", HOME / "chats", None
         self.prefs = load_settings(self.prefs_path)
         self.brain = Brain(self._on_brain, model=os.environ.get("EXO_MODEL") or self.prefs["model"])
-        self.ears, self.mouth = Ears(), Mouth(voice=os.environ.get("EXO_VOICE") or self.prefs["voice_name"])
+        key = os.environ.get("GROQ_API_KEY")  # speech-to-text in the cloud (free tier) instead of on this PC
+        self.ears, self.mouth = CloudEars(key) if key else Ears(), Mouth(voice=os.environ.get("EXO_VOICE") or self.prefs["voice_name"])
         self.rec = Recorder(on_level=lambda lv: self.emit("level", round(min(1.0, lv * 12), 3)))
         self.state, self.listening, self.reply, self.voice_on = "idle", False, "", self.prefs["voice"]
         self._ctx = ("", "")
@@ -60,6 +61,8 @@ class Exo:
         self.awake, self.last_used = False, time.time()
 
     def emit(self, kind, data=None):
+        if kind == "bubble":
+            self._record(data)
         self._emit(f"window.exo && exo.on({json.dumps(kind)}, {json.dumps(data, ensure_ascii=False)})")
 
     def set_state(self, s):
@@ -149,10 +152,51 @@ class Exo:
         save_settings(self.prefs_path, {"model": self.brain.model, "voice": self.voice_on, "voice_name": self.mouth.voice})
 
     def reset(self):
+        self.chat = None
         self.brain.reset()
         self.mouth.stop()
         self.set_state("idle")
         self.emit("reset")
+
+    # --- history: every bubble also lands in ~/.exo/chats/<id>.json ---
+    def _record(self, bubble):
+        if self.chat is None:
+            if bubble.get("who") != "user":  # a status chip before anyone spoke starts no chat
+                return
+            self.chat = {"id": str(time.time_ns()), "title": bubble["text"][:80], "messages": []}
+        self.chat["messages"].append({**bubble, "at": int(time.time() * 1000)})
+        self.chat["session"] = self.brain.session  # the Claude Code session to --resume when it is reopened
+        try:
+            self.chats_dir.mkdir(parents=True, exist_ok=True)
+            (self.chats_dir / f"{self.chat['id']}.json").write_text(json.dumps(self.chat, ensure_ascii=False), encoding="utf-8")
+        except OSError as e:
+            log(f"history: {e}")
+
+    def _load(self, chat_id):
+        try:
+            return json.loads((self.chats_dir / f"{chat_id}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def chats(self):
+        """Saved conversations, newest first. ponytail: reads every file, an index file if there are thousands."""
+        current = self.chat and self.chat["id"]
+        out = []
+        for p in self.chats_dir.glob("*.json"):
+            c = self._load(p.stem)
+            if c and c.get("messages"):
+                out.append({"id": c["id"], "title": c["title"], "at": c["messages"][-1]["at"], "on": c["id"] == current})
+        return sorted(out, key=lambda c: c["at"], reverse=True)
+
+    def open_chat(self, chat_id):
+        """Show a saved conversation; talking again continues it on its Claude Code session."""
+        chat = self._load(chat_id) if str(chat_id).isdigit() else None
+        if not (chat and chat.get("messages")):
+            return
+        self.turn += 1  # drops a transcription still in flight
+        self.reset()
+        self.chat, self.brain.session = chat, chat.get("session")
+        self.emit("history", chat["messages"])
 
     def shutdown(self):
         self.brain.cancel()
@@ -330,6 +374,14 @@ def main():
         @Slot()
         def reset(self):
             self.exo.reset()
+
+        @Slot()
+        def list_chats(self):
+            self.exo.emit("chats", self.exo.chats())
+
+        @Slot(str)
+        def open_chat(self, chat_id):
+            self.exo.open_chat(chat_id)
 
         @Slot(bool)
         def keyboard(self, on):
