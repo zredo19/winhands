@@ -159,7 +159,7 @@ class Brain:
 
     def __init__(self, on_event, model=None):
         self.on_event, self.model = on_event, model or os.environ.get("EXO_MODEL", "sonnet")
-        self.proc, self.session, self.busy, self.cancelled = None, None, False, False
+        self.proc, self.session, self.busy, self.cancelled, self.ready = None, None, False, False, False
         self.lock = threading.Lock()
 
     def command(self):
@@ -177,6 +177,7 @@ class Brain:
         with self.lock:
             if self.proc and self.proc.poll() is None:
                 return
+            self.ready = False
             self.proc = subprocess.Popen(
                 self.command(), cwd=HOME, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
@@ -198,13 +199,15 @@ class Brain:
             return
         if self.busy:  # died mid-turn on its own
             self.busy = False
+            if not self.ready:  # never started: --resume of a session Claude Code already pruned, so start fresh
+                self.session = None
             self.on_event("done", {"ok": False, "text": "Se me cortó la conexión con Claude.", "session": None})
         self.on_event("exit", proc.returncode)
 
     def _handle(self, msg):
         for kind, payload in events(msg):
             if kind == "ready":
-                self.session = payload
+                self.session, self.ready = payload, True
             elif kind == "done":
                 self.busy = False
                 self.session = payload["session"] or self.session

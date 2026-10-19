@@ -125,3 +125,16 @@ def test_voice_choice_is_remembered_and_matches_the_voice_engine(tmp_path):
     assert load_settings(f)["voice_name"] == "dora"
     save_settings(f, {"voice_name": "siri"})
     assert load_settings(f)["voice_name"] == "alex"
+
+
+def test_a_session_claude_code_no_longer_has_is_dropped():
+    # an old chat's session may be pruned by Claude Code: --resume dies before "ready", so start fresh
+    from winhands.exo.brain import Brain
+    seen = []
+    b = Brain(lambda k, p: seen.append((k, p)))
+    b.proc, b.busy, b.session, b.ready = _Proc(["No conversation found with session ID: s1\n"]), True, "s1", False
+    b._read(b.proc)
+    assert seen[-2][0] == "done" and b.session is None
+    b.proc, b.busy, b.session, b.ready = _Proc(), True, "s2", True     # died mid-turn after starting: keep it
+    b._read(b.proc)
+    assert b.session == "s2"
